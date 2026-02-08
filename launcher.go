@@ -20,8 +20,9 @@ PREFIX="$APP_DIR/Resources/wineprefix"
 
 # Fix dosdevices symlinks (they break when .app is moved)
 mkdir -p "$PREFIX/dosdevices"
-ln -sf ../drive_c "$PREFIX/dosdevices/c:"
-ln -sf / "$PREFIX/dosdevices/z:"
+rm -f "$PREFIX/dosdevices/c:" "$PREFIX/dosdevices/z:"
+ln -s ../drive_c "$PREFIX/dosdevices/c:"
+ln -s / "$PREFIX/dosdevices/z:"
 
 # Kill any stale wineserver for this prefix and wait for it to fully exit
 WINEPREFIX="$PREFIX" "$WINESERVER" -k 2>/dev/null || true
@@ -32,18 +33,10 @@ export WINEDLLOVERRIDES="mcicda=n"
 export WINEDEBUG=-all
 export DYLD_FALLBACK_LIBRARY_PATH="$APP_DIR/Resources/wine/lib"
 
-# Get screen resolution for Wine virtual desktop
-SCREEN_RES=$(system_profiler SPDisplaysDataType 2>/dev/null | \
-    grep -i "Resolution:" | head -1 | \
-    sed 's/.*: *\([0-9]*\) *x *\([0-9]*\).*/\1x\2/')
-if [ -z "$SCREEN_RES" ]; then
-    SCREEN_RES="1920x1080"
-fi
-
-# Use Wine virtual desktop so macOS window chrome (close/minimize/fullscreen
-# buttons) is available, and the game can be Cmd-Tabbed away from
+# Launch game directly with nice to reduce CPU impact from busy-wait loops
+# (virtual desktop is configured via registry during build)
 cd "$PREFIX/drive_c/%s"
-"$WINE" explorer /desktop=game,${SCREEN_RES} %s
+nice -n 19 "$WINE" %s
 
 # Wait for wineserver to exit (keeps the .app alive while game runs)
 "$WINESERVER" --wait 2>/dev/null

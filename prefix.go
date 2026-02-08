@@ -45,6 +45,10 @@ func initWinePrefix(wineBin, prefixDir string, win16 bool, r ProgressReporter) e
 			reg.WriteString("[HKEY_CURRENT_USER\\Software\\Wine]\n")
 			reg.WriteString("\"Version\"=\"win95\"\n")
 		}
+		// Enable Wine virtual desktop so the game runs in a managed window
+		// with macOS title bar (close/minimize/fullscreen buttons)
+		reg.WriteString("\n[HKEY_CURRENT_USER\\Software\\Wine\\Explorer\\Desktops]\n")
+		reg.WriteString("\"Default\"=\"1920x1080\"\n")
 		regFile.WriteString(reg.String())
 		regFile.Close()
 		regCmd := exec.Command(wine, "regedit", regFile.Name())
