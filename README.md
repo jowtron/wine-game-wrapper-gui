@@ -67,3 +67,13 @@ wine-game-wrapper-gui/
     app.js             # Frontend logic
   wails.json           # Wails config (no npm, vanilla JS)
 ```
+
+## Notes
+
+### CPU usage with Win16 games
+
+Win16 games often use a busy-wait message loop (`PeekMessage` in a tight loop), which can consume 100%+ CPU under Wine/otvdm. Two mitigations are applied:
+
+- **`PeekMessageSleep=1`** (in `otvdm.ini`): Adds a 1ms sleep per `PeekMessage16` call inside otvdm. This is the effective fix — it dramatically reduces CPU usage with no noticeable impact on game responsiveness. The ini file is generated automatically during the build when Win16/otvdm is enabled.
+
+- **`nice -n 19`** (in the launcher script): Lowers the game's scheduling priority to the minimum. This doesn't reduce actual CPU usage but prevents the game from starving other processes. Could be removed if `PeekMessageSleep` proves sufficient long-term.

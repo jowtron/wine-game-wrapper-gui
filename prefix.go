@@ -126,6 +126,12 @@ func installOtvdm(otvdmDir, wineBin, prefixDir string, r ProgressReporter) error
 
 	r.Logf("  Installed %d otvdm files -> %s", count, destDir)
 
+	// Generate otvdm.ini with PeekMessageSleep to reduce CPU from busy-wait loops.
+	// Win16 games often poll PeekMessage in a tight loop; this adds a 1ms sleep per call.
+	iniPath := filepath.Join(destDir, "otvdm.ini")
+	os.WriteFile(iniPath, []byte("[otvdm]\nPeekMessageSleep=1\n"), 0644)
+	r.Log("  Installed otvdm.ini (PeekMessageSleep=1)")
+
 	// Register DLL overrides so Wine uses native (otvdm) versions
 	if err := registerOtvdmOverrides(wineBin, prefixDir, overrideNames, r); err != nil {
 		return fmt.Errorf("register DLL overrides: %w", err)
