@@ -199,7 +199,7 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 
 	// Step 5: Initialize Wine prefix
 	r.Step(5, 7, "Initializing Wine prefix...")
-	if err := initWinePrefix(wineBin, prefixDir, profile.Win16, r); err != nil {
+	if err := initWinePrefix(wineBin, prefixDir, profile, r); err != nil {
 		return fmt.Errorf("init Wine prefix: %w", err)
 	}
 

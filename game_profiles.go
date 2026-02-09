@@ -2,12 +2,20 @@ package main
 
 // GameProfile defines a known game's configuration for building a .app wrapper.
 type GameProfile struct {
-	Name     string // Display name, e.g. "CivNet"
-	Slug     string // Short identifier, e.g. "civnet"
-	Exe      string // Main executable, e.g. "CIVNET.EXE"
-	Win16    bool   // True if Win16 app requiring otvdm
-	BundleID string // macOS bundle identifier
-	GameDir  string // Directory name inside drive_c, defaults to Name
+	Name        string       // Display name, e.g. "CivNet"
+	Slug        string       // Short identifier, e.g. "civnet"
+	Exe         string       // Main executable, e.g. "CIVNET.EXE"
+	Win16       bool         // True if Win16 app requiring otvdm
+	BundleID    string       // macOS bundle identifier
+	GameDir     string       // Directory name inside drive_c, defaults to Name
+	ScancodeMap []ScancodeEntry // Key remappings via Windows Scancode Map registry
+}
+
+// ScancodeEntry maps one keyboard scancode to another.
+// Used to remap regular keys to numpad keys for games that use numpad for movement.
+type ScancodeEntry struct {
+	From byte // Source scancode (key to remap)
+	To   byte // Target scancode (what it becomes)
 }
 
 var builtinProfiles = map[string]GameProfile{
@@ -18,6 +26,18 @@ var builtinProfiles = map[string]GameProfile{
 		Win16:    true,
 		BundleID: "com.retrowine.civnet",
 		GameDir:  "CivNet",
+		// Remap 789/uio/jkl to numpad for unit movement
+		ScancodeMap: []ScancodeEntry{
+			{0x08, 0x47}, // 7 → Numpad 7
+			{0x09, 0x48}, // 8 → Numpad 8
+			{0x0A, 0x49}, // 9 → Numpad 9
+			{0x16, 0x4B}, // U → Numpad 4
+			{0x17, 0x4C}, // I → Numpad 5
+			{0x18, 0x4D}, // O → Numpad 6
+			{0x24, 0x4F}, // J → Numpad 1
+			{0x25, 0x50}, // K → Numpad 2
+			{0x26, 0x51}, // L → Numpad 3
+		},
 	},
 	"civ2": {
 		Name:     "Civilization II",

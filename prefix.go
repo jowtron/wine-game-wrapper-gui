@@ -11,7 +11,7 @@ import (
 
 // initWinePrefix creates and initializes a Wine prefix using wineboot.
 // If win16 is true, sets the Windows version to win95 for 16-bit app compatibility.
-func initWinePrefix(wineBin, prefixDir string, win16 bool, r ProgressReporter) error {
+func initWinePrefix(wineBin, prefixDir string, profile GameProfile, r ProgressReporter) error {
 	if err := os.MkdirAll(prefixDir, 0755); err != nil {
 		return fmt.Errorf("create prefix dir: %w", err)
 	}
@@ -40,7 +40,7 @@ func initWinePrefix(wineBin, prefixDir string, win16 bool, r ProgressReporter) e
 		reg.WriteString("[HKEY_CURRENT_USER\\Software\\Wine\\DllOverrides]\n")
 		reg.WriteString("\"mscoree\"=\"\"\n")
 		reg.WriteString("\n")
-		if win16 {
+		if profile.Win16 {
 			r.Log("  Setting Windows version to win95 (required for Win16 apps)...")
 			reg.WriteString("[HKEY_CURRENT_USER\\Software\\Wine]\n")
 			reg.WriteString("\"Version\"=\"win95\"\n")
@@ -49,6 +49,23 @@ func initWinePrefix(wineBin, prefixDir string, win16 bool, r ProgressReporter) e
 		// with macOS title bar (close/minimize/fullscreen buttons)
 		reg.WriteString("\n[HKEY_CURRENT_USER\\Software\\Wine\\Explorer\\Desktops]\n")
 		reg.WriteString("\"Default\"=\"1920x1080\"\n")
+		// Apply scancode map for key remapping (e.g. 789/uio/jkl → numpad)
+		if len(profile.ScancodeMap) > 0 {
+			r.Logf("  Applying %d key remappings...", len(profile.ScancodeMap))
+			reg.WriteString("\n[HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Keyboard Layout]\n")
+			reg.WriteString("\"Scancode Map\"=hex:")
+			// Header: version (4 bytes) + flags (4 bytes)
+			reg.WriteString("00,00,00,00,00,00,00,00,")
+			// Entry count: mappings + 1 null terminator
+			count := byte(len(profile.ScancodeMap) + 1)
+			reg.WriteString(fmt.Sprintf("%02x,00,00,00,", count))
+			// Each entry: target_lo,target_hi,source_lo,source_hi
+			for _, e := range profile.ScancodeMap {
+				reg.WriteString(fmt.Sprintf("%02x,00,%02x,00,", e.To, e.From))
+			}
+			// Null terminator
+			reg.WriteString("00,00,00,00\n")
+		}
 		regFile.WriteString(reg.String())
 		regFile.Close()
 		regCmd := exec.Command(wine, "regedit", regFile.Name())
