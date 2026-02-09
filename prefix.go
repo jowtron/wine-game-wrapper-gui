@@ -49,23 +49,6 @@ func initWinePrefix(wineBin, prefixDir string, profile GameProfile, r ProgressRe
 		// with macOS title bar (close/minimize/fullscreen buttons)
 		reg.WriteString("\n[HKEY_CURRENT_USER\\Software\\Wine\\Explorer\\Desktops]\n")
 		reg.WriteString("\"Default\"=\"1920x1080\"\n")
-		// Apply scancode map for key remapping (e.g. 789/uio/jkl → numpad)
-		if len(profile.ScancodeMap) > 0 {
-			r.Logf("  Applying %d key remappings...", len(profile.ScancodeMap))
-			reg.WriteString("\n[HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Keyboard Layout]\n")
-			reg.WriteString("\"Scancode Map\"=hex:")
-			// Header: version (4 bytes) + flags (4 bytes)
-			reg.WriteString("00,00,00,00,00,00,00,00,")
-			// Entry count: mappings + 1 null terminator
-			count := byte(len(profile.ScancodeMap) + 1)
-			reg.WriteString(fmt.Sprintf("%02x,00,00,00,", count))
-			// Each entry: target_lo,target_hi,source_lo,source_hi
-			for _, e := range profile.ScancodeMap {
-				reg.WriteString(fmt.Sprintf("%02x,00,%02x,00,", e.To, e.From))
-			}
-			// Null terminator
-			reg.WriteString("00,00,00,00\n")
-		}
 		regFile.WriteString(reg.String())
 		regFile.Close()
 		regCmd := exec.Command(wine, "regedit", regFile.Name())
@@ -287,4 +270,81 @@ func hasAnySuffix(s string, suffixes ...string) bool {
 		}
 	}
 	return false
+}
+
+// installKeyremap installs keyhook.exe, keyremap.dll and generates keyremap.ini
+// in the prefix for keyboard remapping via a global WH_GETMESSAGE hook.
+func installKeyremap(resourcesDir, prefixDir string, profile GameProfile, r ProgressReporter) error {
+	if len(profile.ScancodeMap) == 0 {
+		return nil
+	}
+
+	driveC := filepath.Join(prefixDir, "drive_c")
+
+	// Copy keyhook.exe to drive_c root
+	srcHook := filepath.Join(resourcesDir, "keyremap", "keyhook.exe")
+	if _, err := os.Stat(srcHook); err != nil {
+		r.Log("  Warning: keyhook.exe not found in resources, skipping key remapping")
+		return nil
+	}
+	if err := copyFile(srcHook, filepath.Join(driveC, "keyhook.exe")); err != nil {
+		return fmt.Errorf("copy keyhook.exe: %w", err)
+	}
+
+	// Copy keyremap.dll to system32 and syswow64
+	srcDll := filepath.Join(resourcesDir, "keyremap", "keyremap.dll")
+	for _, dir := range []string{"system32", "syswow64"} {
+		dest := filepath.Join(driveC, "windows", dir, "keyremap.dll")
+		destDir := filepath.Dir(dest)
+		if _, err := os.Stat(destDir); os.IsNotExist(err) {
+			continue
+		}
+		if err := copyFile(srcDll, dest); err != nil {
+			return fmt.Errorf("copy keyremap.dll to %s: %w", dir, err)
+		}
+	}
+
+	// Generate keyremap.ini with VK and scancode mappings
+	var ini strings.Builder
+	ini.WriteString("[remap]\n")
+	// VK code mapping table (from ScancodeEntry which stores scancodes,
+	// we need to derive VK codes too)
+	// Map: From scancode -> source VK, To scancode -> target VK
+	scToVK := map[byte]byte{
+		0x08: 0x37, // 7
+		0x09: 0x38, // 8
+		0x0A: 0x39, // 9
+		0x16: 0x55, // U
+		0x17: 0x49, // I
+		0x18: 0x4F, // O
+		0x24: 0x4A, // J
+		0x25: 0x4B, // K
+		0x26: 0x4C, // L
+		0x47: 0x67, // Numpad 7
+		0x48: 0x68, // Numpad 8
+		0x49: 0x69, // Numpad 9
+		0x4B: 0x64, // Numpad 4
+		0x4C: 0x65, // Numpad 5
+		0x4D: 0x66, // Numpad 6
+		0x4F: 0x61, // Numpad 1
+		0x50: 0x62, // Numpad 2
+		0x51: 0x63, // Numpad 3
+	}
+
+	for _, e := range profile.ScancodeMap {
+		srcVK, ok1 := scToVK[e.From]
+		dstVK, ok2 := scToVK[e.To]
+		if ok1 && ok2 {
+			// Format: src_vk=dst_vk,src_scancode,dst_scancode
+			ini.WriteString(fmt.Sprintf("%02X=%02X,%02X,%02X\n", srcVK, dstVK, e.From, e.To))
+		}
+	}
+
+	iniPath := filepath.Join(driveC, "keyremap.ini")
+	if err := os.WriteFile(iniPath, []byte(ini.String()), 0644); err != nil {
+		return fmt.Errorf("write keyremap.ini: %w", err)
+	}
+
+	r.Logf("  Installed key remapping (%d keys)", len(profile.ScancodeMap))
+	return nil
 }

@@ -29,9 +29,15 @@ WINEPREFIX="$PREFIX" "$WINESERVER" -k 2>/dev/null || true
 WINEPREFIX="$PREFIX" "$WINESERVER" --wait 2>/dev/null || true
 
 export WINEPREFIX="$PREFIX"
-export WINEDLLOVERRIDES="mcicda=n"
+export WINEDLLOVERRIDES="mcicda=n;keyremap=n"
 export WINEDEBUG=-all
 export DYLD_FALLBACK_LIBRARY_PATH="$APP_DIR/Resources/wine/lib"
+
+# Start key remapping hook if keyhook.exe and keyremap.ini exist
+if [ -f "$PREFIX/drive_c/keyhook.exe" ] && [ -f "$PREFIX/drive_c/keyremap.ini" ]; then
+    "$WINE" "C:\keyhook.exe" &
+    sleep 1
+fi
 
 # Launch game directly with nice to reduce CPU impact from busy-wait loops
 # (virtual desktop is configured via registry during build)

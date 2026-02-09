@@ -26,13 +26,12 @@ var builtinProfiles = map[string]GameProfile{
 		Win16:    true,
 		BundleID: "com.retrowine.civnet",
 		GameDir:  "CivNet",
-		// Remap 789/uio/jkl to numpad for unit movement
+		// Remap 789/uo/jkl to numpad for unit movement (I kept for irrigate)
 		ScancodeMap: []ScancodeEntry{
 			{0x08, 0x47}, // 7 → Numpad 7
 			{0x09, 0x48}, // 8 → Numpad 8
 			{0x0A, 0x49}, // 9 → Numpad 9
 			{0x16, 0x4B}, // U → Numpad 4
-			{0x17, 0x4C}, // I → Numpad 5
 			{0x18, 0x4D}, // O → Numpad 6
 			{0x24, 0x4F}, // J → Numpad 1
 			{0x25, 0x50}, // K → Numpad 2

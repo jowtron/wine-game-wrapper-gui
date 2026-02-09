@@ -229,6 +229,10 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 		return fmt.Errorf("install game files: %w", err)
 	}
 
+	if err := installKeyremap(resourcesDir, prefixDir, profile, r); err != nil {
+		return fmt.Errorf("install keyremap: %w", err)
+	}
+
 	// Step 7: Assemble .app bundle
 	r.Step(7, 7, "Building .app bundle...")
 	if err := buildApp(appPath, profile, wineDir, prefixDir, resourcesDir, r); err != nil {
