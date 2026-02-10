@@ -85,10 +85,12 @@ static pfnWaveOutReset pWaveOutReset = NULL;
 static pfnWaveOutPause pWaveOutPause = NULL;
 static pfnWaveOutRestart pWaveOutRestart = NULL;
 
-/* Write a command to the log file */
+/* Write a command to the log file (truncated on first write each session) */
 static void LogCommand(const char* fmt, ...)
 {
-    FILE* f = fopen(LOG_FILE, "a");
+    static BOOL first = TRUE;
+    FILE* f = fopen(LOG_FILE, first ? "w" : "a");
+    first = FALSE;
     if (f) {
         va_list args;
         va_start(args, fmt);
