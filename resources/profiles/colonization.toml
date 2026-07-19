@@ -8,3 +8,29 @@ exe = "COLONIZE.EXE"
 win16 = true
 game_dir = "COLONIZE"
 install = "copy-dir:INSTALL"
+
+# Remap 789/uo/jkl to the numpad for unit movement (same layout as CivNet).
+[[keymap]]
+from = "7"
+to = "num7"
+[[keymap]]
+from = "8"
+to = "num8"
+[[keymap]]
+from = "9"
+to = "num9"
+[[keymap]]
+from = "u"
+to = "num4"
+[[keymap]]
+from = "o"
+to = "num6"
+[[keymap]]
+from = "j"
+to = "num1"
+[[keymap]]
+from = "k"
+to = "num2"
+[[keymap]]
+from = "l"
+to = "num3"
