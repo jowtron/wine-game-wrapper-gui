@@ -24,14 +24,34 @@ rm -f "$PREFIX/dosdevices/c:" "$PREFIX/dosdevices/z:"
 ln -s ../drive_c "$PREFIX/dosdevices/c:"
 ln -s / "$PREFIX/dosdevices/z:"
 
-# Kill any stale wineserver for this prefix and wait for it to fully exit
-WINEPREFIX="$PREFIX" "$WINESERVER" -k 2>/dev/null || true
-WINEPREFIX="$PREFIX" "$WINESERVER" --wait 2>/dev/null || true
+# Force kill all Wine processes belonging to this app.
+# Finds wineserver by path, then kills its children (winedevice.exe etc.)
+# which don't show the Wine path in their command line.
+kill_wine_procs() {
+    local pids
+    pids=$(pgrep -f "$APP_DIR/Resources/wine" 2>/dev/null)
+    for pid in $pids; do
+        pkill -9 -P "$pid" 2>/dev/null
+        kill -9 "$pid" 2>/dev/null
+    done
+}
+
+# Kill any stale Wine processes from a previous run
+kill_wine_procs
 
 export WINEPREFIX="$PREFIX"
 export WINEDLLOVERRIDES="mcicda=n;keyremap=n"
 export WINEDEBUG=-all
 export DYLD_FALLBACK_LIBRARY_PATH="$APP_DIR/Resources/wine/lib"
+
+# Clean up on exit: graceful shutdown, then force kill stragglers
+cleanup() {
+    "$WINESERVER" -k 2>/dev/null
+    sleep 2
+    kill_wine_procs
+}
+trap cleanup EXIT
+trap 'exit 1' INT TERM HUP
 
 # Start key remapping hook if keyhook.exe and keyremap.ini exist
 if [ -f "$PREFIX/drive_c/keyhook.exe" ] && [ -f "$PREFIX/drive_c/keyremap.ini" ]; then
@@ -39,13 +59,15 @@ if [ -f "$PREFIX/drive_c/keyhook.exe" ] && [ -f "$PREFIX/drive_c/keyremap.ini" ]
     sleep 1
 fi
 
-# Launch game directly with nice to reduce CPU impact from busy-wait loops
-# (virtual desktop is configured via registry during build)
+# Launch game in background so signals can interrupt 'wait' and fire the trap.
+# (Foreground commands block trap delivery in bash.)
 cd "$PREFIX/drive_c/%s"
-nice -n 19 "$WINE" %s
+nice -n 19 "$WINE" %s &
+GAME_PID=$!
 
-# Wait for wineserver to exit (keeps the .app alive while game runs)
-"$WINESERVER" --wait 2>/dev/null
+# Wait only for the game process — once it exits, clean up and quit.
+# ('wait $pid' is interruptible by signals, unlike foreground commands.)
+wait $GAME_PID 2>/dev/null
 `, profile.Name, gameDir, exe)
 }
 
