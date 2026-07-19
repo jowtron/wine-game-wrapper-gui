@@ -6,6 +6,7 @@ import "fmt"
 func generateLauncherScript(profile GameProfile) string {
 	exe := profile.Exe
 	gameDir := profile.GameDir
+	slug := profile.Slug
 
 	return fmt.Sprintf(`#!/bin/bash
 #
@@ -17,6 +18,8 @@ APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WINE="$APP_DIR/Resources/wine/bin/wine"
 WINESERVER="$APP_DIR/Resources/wine/bin/wineserver"
 PREFIX="$APP_DIR/Resources/wineprefix"
+GAME_DIR=%q
+DATA_DIR="$HOME/Library/Application Support/wine-game-wrapper/%s"
 
 # Fix dosdevices symlinks (they break when .app is moved)
 mkdir -p "$PREFIX/dosdevices"
@@ -26,6 +29,19 @@ ln -s / "$PREFIX/dosdevices/z:"
 # Map bundled CD content as drive d: (games that read videos/music from CD)
 if [ -d "$APP_DIR/Resources/cdrom" ]; then
     ln -s ../../cdrom "$PREFIX/dosdevices/d:"
+fi
+
+# Game files live outside the bundle so saves survive app replacement.
+# Seed the live copy from the bundle's pristine master on first run.
+if [ ! -d "$DATA_DIR/$GAME_DIR" ]; then
+    mkdir -p "$DATA_DIR"
+    echo "First run: copying game files to $DATA_DIR..."
+    cp -R "$APP_DIR/Resources/game/$GAME_DIR" "$DATA_DIR/$GAME_DIR"
+fi
+# Symlink the game dir into the prefix (replace a real dir from old bundles)
+if [ ! -L "$PREFIX/drive_c/$GAME_DIR" ]; then
+    rm -rf "$PREFIX/drive_c/$GAME_DIR"
+    ln -s "$DATA_DIR/$GAME_DIR" "$PREFIX/drive_c/$GAME_DIR"
 fi
 
 # Force kill all Wine processes belonging to this app.
@@ -65,14 +81,14 @@ fi
 
 # Launch game in background so signals can interrupt 'wait' and fire the trap.
 # (Foreground commands block trap delivery in bash.)
-cd "$PREFIX/drive_c/%s"
+cd "$PREFIX/drive_c/$GAME_DIR"
 nice -n 19 "$WINE" %s &
 GAME_PID=$!
 
 # Wait only for the game process — once it exits, clean up and quit.
 # ('wait $pid' is interruptible by signals, unlike foreground commands.)
 wait $GAME_PID 2>/dev/null
-`, profile.Name, gameDir, exe)
+`, profile.Name, gameDir, slug, exe)
 }
 
 // generateInfoPlist returns the Info.plist XML content for the .app bundle.

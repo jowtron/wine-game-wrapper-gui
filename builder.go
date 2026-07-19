@@ -58,6 +58,20 @@ func buildApp(appPath string, profile GameProfile, wineDir, prefixDir, embeddedR
 		return fmt.Errorf("copy prefix: %w", err)
 	}
 
+	// Move the game directory out of the prefix to Resources/game/<GameDir>.
+	// It is the pristine master copy: the launcher seeds a per-user live copy
+	// in ~/Library/Application Support on first run and symlinks it into
+	// drive_c, so saves survive bundle replacement.
+	gameSrc := filepath.Join(prefixDestDir, "drive_c", profile.GameDir)
+	gameMaster := filepath.Join(resourcesDir, "game")
+	if err := os.MkdirAll(gameMaster, 0755); err != nil {
+		return fmt.Errorf("create game master dir: %w", err)
+	}
+	if err := os.Rename(gameSrc, filepath.Join(gameMaster, profile.GameDir)); err != nil {
+		return fmt.Errorf("move game dir to master: %w", err)
+	}
+	r.Logf("  Moved %s to Resources/game (saves will live in Application Support)", profile.GameDir)
+
 	// Copy retained CD content (drive d:) if the game needs it
 	haveCDROM := false
 	if cdromDir != "" {

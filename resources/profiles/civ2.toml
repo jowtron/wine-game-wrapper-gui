@@ -8,8 +8,19 @@ exe = "civ2.exe"
 win16 = false
 game_dir = "Civ2"
 install = "extract-installshield"
-retain_cd = ["Civ2/KINGS", "Civ2/VIDEO"]
-cd_label = "CIV2_MGE"
+# KINGS/VIDEO are streamed from CD at runtime; the small root files and
+# Civ2/civ2.exe are retained as CD-check markers. The label must match the
+# real disc: the game scans CD-ROM drives for it.
+retain_cd = [
+  "Civ2/KINGS",
+  "Civ2/VIDEO",
+  "Civ2/civ2.exe",
+  "DATA.TAG",
+  "lang.dat",
+  "os.dat",
+  "layout.bin",
+]
+cd_label = "Civ2:MGE v1.0"
 
 # Remap 789/uo/jkl to the numpad for unit movement (same layout as CivNet;
 # i left alone for Irrigate).

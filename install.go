@@ -237,12 +237,21 @@ func runInstaller(mountPoint, installerPath string, profile GameProfile, wineBin
 func stageRetainCD(mountPoint string, profile GameProfile, cdromDir string, r ProgressReporter) error {
 	for _, rel := range profile.RetainCD {
 		src := filepath.Join(mountPoint, filepath.FromSlash(rel))
-		if _, err := os.Stat(src); err != nil {
+		info, err := os.Stat(src)
+		if err != nil {
 			return fmt.Errorf("retain_cd path %q not found on CD", rel)
 		}
 		dst := filepath.Join(cdromDir, filepath.FromSlash(rel))
 		r.Logf("  Retaining CD content: %s", rel)
-		if err := copyTree(src, dst); err != nil {
+		if info.IsDir() {
+			err = copyTree(src, dst)
+		} else {
+			if mkErr := os.MkdirAll(filepath.Dir(dst), 0755); mkErr != nil {
+				return mkErr
+			}
+			err = copyFile(src, dst)
+		}
+		if err != nil {
 			return fmt.Errorf("copy %s: %w", rel, err)
 		}
 	}
