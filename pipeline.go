@@ -97,7 +97,7 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 	// Resolve output path
 	appPath := config.OutputPath
 	if appPath == "" {
-		appPath = profile.Name + ".app"
+		appPath = filepath.Join("/Applications", profile.Name+".app")
 	}
 	// Ensure .app extension
 	if !strings.HasSuffix(appPath, ".app") {
@@ -105,9 +105,9 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 	}
 	appPath, _ = filepath.Abs(appPath)
 
-	// Check if output already exists
+	// Check if output already exists — caller should have handled this via overwrite prompt
 	if _, err := os.Stat(appPath); err == nil {
-		return fmt.Errorf("output already exists: %s\nRemove it first or choose a different path", appPath)
+		return fmt.Errorf("output already exists: %s", appPath)
 	}
 
 	// Print banner

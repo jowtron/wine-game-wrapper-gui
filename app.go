@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -96,6 +97,25 @@ func (a *App) IsBuilding() bool {
 	return a.building
 }
 
+// resolveOutputPath returns the absolute .app path that the build would produce.
+func resolveOutputPath(config BuildConfig) string {
+	appPath := config.OutputPath
+	if appPath == "" {
+		name := "Game"
+		if config.GameSlug != "" && config.GameSlug != "custom" {
+			if p, ok := LookupProfile(config.GameSlug); ok {
+				name = p.Name
+			}
+		}
+		appPath = filepath.Join("/Applications", name+".app")
+	}
+	if !strings.HasSuffix(appPath, ".app") {
+		appPath += ".app"
+	}
+	appPath, _ = filepath.Abs(appPath)
+	return appPath
+}
+
 // StartBuild launches the build pipeline in a background goroutine.
 func (a *App) StartBuild(config BuildConfig) error {
 	a.mu.Lock()
@@ -103,6 +123,26 @@ func (a *App) StartBuild(config BuildConfig) error {
 		a.mu.Unlock()
 		return nil
 	}
+	a.mu.Unlock()
+
+	// Check if output already exists and prompt to overwrite
+	appPath := resolveOutputPath(config)
+	if _, err := os.Stat(appPath); err == nil {
+		result, err := runtime.MessageDialog(a.ctx, runtime.MessageDialogOptions{
+			Type:          runtime.QuestionDialog,
+			Title:         "Overwrite Existing App?",
+			Message:       appPath + " already exists. Do you want to replace it?",
+			DefaultButton: "No",
+			CancelButton:  "No",
+			Buttons:       []string{"Yes", "No"},
+		})
+		if err != nil || result != "Yes" {
+			return nil
+		}
+		os.RemoveAll(appPath)
+	}
+
+	a.mu.Lock()
 	a.building = true
 	a.mu.Unlock()
 
