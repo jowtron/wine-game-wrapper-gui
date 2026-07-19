@@ -1,3 +1,4 @@
 build/bin/
 .DS_Store
 *.app
+/wine-game-wrapper-gui
