@@ -75,6 +75,41 @@ func initWinePrefix(wineBin, prefixDir string, profile GameProfile, r ProgressRe
 	return nil
 }
 
+// applyColorTheme imports a Windows color palette (dark/light) into the prefix
+// registry so menus, dialogs, and window chrome match the chosen appearance.
+func applyColorTheme(wineBin, prefixDir, mode string, r ProgressReporter) error {
+	reg := themeColorsReg(mode)
+	if reg == "" {
+		return fmt.Errorf("unknown theme %q", mode)
+	}
+	regFile, err := os.CreateTemp("", "theme-*.reg")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(regFile.Name())
+	if _, err := regFile.WriteString(reg); err != nil {
+		regFile.Close()
+		return err
+	}
+	regFile.Close()
+
+	wine := filepath.Join(filepath.Dir(wineBin), "wine")
+	cmd := exec.Command(wine, "regedit", regFile.Name())
+	cmd.Env = append(os.Environ(), "WINEPREFIX="+prefixDir, "WINEDEBUG=-all")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		r.Log(string(out))
+		return fmt.Errorf("apply %s theme: %w", mode, err)
+	}
+
+	wineserver := filepath.Join(filepath.Dir(wineBin), "wineserver")
+	kill := exec.Command(wineserver, "-k")
+	kill.Env = append(os.Environ(), "WINEPREFIX="+prefixDir)
+	kill.Run()
+
+	r.Logf("  Applied %s Windows theme", mode)
+	return nil
+}
+
 // installMcicda copies the mcicda.dll to both system32 and syswow64 in the prefix.
 func installMcicda(dllPath, prefixDir string, r ProgressReporter) error {
 	dests := []string{

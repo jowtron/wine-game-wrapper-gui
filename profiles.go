@@ -24,6 +24,7 @@ type GameProfile struct {
 	BundleID string   `toml:"bundle_id"` // macOS bundle identifier; default com.retrowine.<slug>
 	GameDir  string   `toml:"game_dir"`  // Directory name inside drive_c; default: name
 	Desktop  string   `toml:"desktop"`   // Wine virtual desktop size; default 1920x1080
+	Theme    string   `toml:"theme"`     // Windows UI theme: "", "light", "dark", "auto"
 	Install  string   `toml:"install"`   // Install strategy; default copy-cd-root (see install.go)
 	RetainCD []string `toml:"retain_cd"` // CD paths to bundle and map as drive d:
 	CDLabel  string   `toml:"cd_label"`  // Volume label for the emulated d: drive
@@ -120,6 +121,11 @@ func (p *GameProfile) applyDefaults() error {
 	}
 	if _, err := parseInstallStrategy(p.Install); err != nil {
 		return fmt.Errorf("profile %q: %w", p.Name, err)
+	}
+	switch p.Theme {
+	case "", "light", "dark", "auto":
+	default:
+		return fmt.Errorf("profile %q: theme must be light, dark, or auto (got %q)", p.Name, p.Theme)
 	}
 	for _, h := range p.HexPatches {
 		if h.File == "" || len(h.Expect) == 0 || len(h.Expect) != len(h.Replace) {

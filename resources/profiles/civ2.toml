@@ -7,6 +7,7 @@ slug = "civ2"
 exe = "civ2.exe"
 win16 = false
 game_dir = "Civ2"
+theme = "auto"  # follow the macOS light/dark appearance for menus/dialogs/chrome
 install = "extract-installshield"
 # KINGS/VIDEO are streamed from CD at runtime; the small root files and
 # Civ2/civ2.exe are retained as CD-check markers. The label must match the
