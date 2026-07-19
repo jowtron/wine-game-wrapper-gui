@@ -95,6 +95,12 @@ func installGameFromCD(isoPath string, profile GameProfile, wineBin, prefixDir, 
 		}
 	}
 
+	// Expand any ARCV-compressed files (EDI Install Pro archives, e.g.
+	// Colonization's COLONIZE.$00 -> colonize.exe)
+	if err := expandARCVFiles(gameDest, r); err != nil {
+		return fmt.Errorf("expand ARCV archives: %w", err)
+	}
+
 	// Sanity check: the game exe must exist after installation
 	if findCaseInsensitive(gameDest, profile.Exe) == "" {
 		return fmt.Errorf("%s not found in %s after install — check the profile's game_dir and install strategy", profile.Exe, gameDest)
@@ -258,4 +264,40 @@ func copyTree(src, dst string) error {
 	}
 	cmd := exec.Command("cp", "-R", src+"/.", dst)
 	return cmd.Run()
+}
+
+// expandARCVFiles finds ARCV archives (EDI Install Pro compressed files,
+// typically *.$00) in dir, decompresses each to its original filename, and
+// removes the archive. Non-ARCV files are left untouched.
+func expandARCVFiles(dir string, r ProgressReporter) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		data, err := os.ReadFile(path)
+		if err != nil || !IsARCV(data) {
+			continue
+		}
+		f, err := ParseARCV(data)
+		if err != nil {
+			r.Logf("  Warning: %s looks like ARCV but failed to parse: %v", e.Name(), err)
+			continue
+		}
+		out, err := f.Decompress()
+		if err != nil {
+			return fmt.Errorf("decompress %s: %w", e.Name(), err)
+		}
+		dst := filepath.Join(dir, f.Name)
+		if err := os.WriteFile(dst, out, 0755); err != nil {
+			return fmt.Errorf("write %s: %w", f.Name, err)
+		}
+		os.Remove(path)
+		r.Logf("  Expanded ARCV: %s -> %s (%d bytes, CRC verified)", e.Name(), f.Name, len(out))
+	}
+	return nil
 }
