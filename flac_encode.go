@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/mewkiz/flac"
 	"github.com/mewkiz/flac/frame"
@@ -205,37 +207,79 @@ func parseWAVHeader(r io.ReadSeeker) (sampleRate, bitsPerSample, numChannels uin
 }
 
 // convertToFLAC converts WAV files in dir to FLAC using pure Go, removing the originals.
-// Returns the number of tracks converted.
+// Encodes files in parallel. Returns the number of tracks converted.
 func convertToFLAC(dir string, r ProgressReporter) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return 0, err
 	}
 
-	count := 0
+	// Collect WAV files to convert
+	type wavJob struct {
+		name     string
+		wavPath  string
+		flacPath string
+	}
+	var jobs []wavJob
 	for _, e := range entries {
 		name := e.Name()
-		if !strings.HasSuffix(strings.ToLower(name), ".wav") {
+		lower := strings.ToLower(name)
+		if !strings.HasSuffix(lower, ".wav") || strings.HasPrefix(lower, "track01") {
 			continue
 		}
-		// Skip track01 - it's the data track
-		if strings.HasPrefix(strings.ToLower(name), "track01") {
-			continue
-		}
-
-		wavPath := filepath.Join(dir, name)
 		flacName := name[:len(name)-4] + ".flac"
-		flacPath := filepath.Join(dir, flacName)
-
-		r.Logf("  Converting %s -> %s", name, flacName)
-		if err := encodeWAVToFLAC(wavPath, flacPath); err != nil {
-			return count, fmt.Errorf("convert %s: %w", name, err)
-		}
-
-		// Remove the WAV
-		os.Remove(wavPath)
-		count++
+		jobs = append(jobs, wavJob{
+			name:     name,
+			wavPath:  filepath.Join(dir, name),
+			flacPath: filepath.Join(dir, flacName),
+		})
 	}
 
-	return count, nil
+	if len(jobs) == 0 {
+		return 0, nil
+	}
+
+	workers := runtime.NumCPU()
+	if workers > len(jobs) {
+		workers = len(jobs)
+	}
+
+	var mu sync.Mutex
+	var firstErr error
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, workers)
+
+	for _, job := range jobs {
+		job := job
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			mu.Lock()
+			if firstErr != nil {
+				mu.Unlock()
+				return
+			}
+			r.Logf("  Converting %s -> %s", job.name, job.name[:len(job.name)-4]+".flac")
+			mu.Unlock()
+
+			if err := encodeWAVToFLAC(job.wavPath, job.flacPath); err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = fmt.Errorf("convert %s: %w", job.name, err)
+				}
+				mu.Unlock()
+				return
+			}
+			os.Remove(job.wavPath)
+		}()
+	}
+	wg.Wait()
+
+	if firstErr != nil {
+		return 0, firstErr
+	}
+	return len(jobs), nil
 }
