@@ -8,6 +8,7 @@ exe = "COLONIZE.EXE"
 win16 = true
 game_dir = "COLONIZE"
 install = "copy-dir:INSTALL"
+theme = "auto"  # follow the macOS light/dark appearance for menus/dialogs/chrome
 
 # Remap 789/uo/jkl to the numpad for unit movement (same layout as CivNet).
 [[keymap]]
