@@ -192,6 +192,15 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 		return fmt.Errorf("install keyremap: %w", err)
 	}
 
+	// Apply a Windows color theme. Static dark/light is baked into the prefix
+	// now; "auto" is decided at launch by the launcher (reads the macOS
+	// appearance), so nothing is baked here for it.
+	if profile.Theme == "dark" || profile.Theme == "light" {
+		if err := applyColorTheme(wineBin, prefixDir, profile.Theme, r); err != nil {
+			return fmt.Errorf("apply theme: %w", err)
+		}
+	}
+
 	// Step 5: Install game files per the profile's install strategy,
 	// apply patches, and stage any retained CD content
 	r.Step(5, 7, fmt.Sprintf("Installing game (%s)...", profile.Install))

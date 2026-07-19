@@ -5,6 +5,7 @@ exe = "CIVNET.EXE"
 win16 = true
 game_dir = "CivNet"
 install = "copy-cd-root"
+theme = "dark"  # prototype: bake a dark Windows palette (menus/dialogs/chrome)
 
 # Official MicroProse v1.02 patch (files under resources/patches/civnet)
 [[overlay]]

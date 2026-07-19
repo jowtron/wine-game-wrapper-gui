@@ -64,6 +64,18 @@ export WINEDLLOVERRIDES="mcicda=n;keyremap=n"
 export WINEDEBUG=-all
 export DYLD_FALLBACK_LIBRARY_PATH="$APP_DIR/Resources/wine/lib"
 
+# Auto theme: apply the Windows palette matching the current macOS appearance.
+# (Static dark/light themes are already baked into the prefix at build time.)
+if [ -d "$APP_DIR/Resources/themes" ]; then
+    if defaults read -g AppleInterfaceStyle 2>/dev/null | grep -qi dark; then
+        MODE=dark
+    else
+        MODE=light
+    fi
+    "$WINE" regedit "$APP_DIR/Resources/themes/$MODE.reg" 2>/dev/null
+    "$WINESERVER" -k 2>/dev/null
+fi
+
 # Clean up on exit: graceful shutdown, then force kill stragglers
 cleanup() {
     "$WINESERVER" -k 2>/dev/null

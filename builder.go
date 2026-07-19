@@ -98,6 +98,22 @@ func buildApp(appPath string, profile GameProfile, wineDir, prefixDir, embeddedR
 		os.Symlink("../../cdrom", filepath.Join(dosdevicesDir, "d:"))
 	}
 
+	// For "auto" theme, ship both palettes in the bundle; the launcher picks
+	// one at startup based on the current macOS appearance.
+	if profile.Theme == "auto" {
+		themesDir := filepath.Join(resourcesDir, "themes")
+		if err := os.MkdirAll(themesDir, 0755); err != nil {
+			return fmt.Errorf("create themes dir: %w", err)
+		}
+		for _, mode := range []string{"dark", "light"} {
+			dst := filepath.Join(themesDir, mode+".reg")
+			if err := os.WriteFile(dst, []byte(themeColorsReg(mode)), 0644); err != nil {
+				return fmt.Errorf("write %s theme: %w", mode, err)
+			}
+		}
+		r.Log("  Bundled auto light/dark themes")
+	}
+
 	// Install app icon if available
 	iconDst := filepath.Join(resourcesDir, "AppIcon.icns")
 	if embeddedResourcesDir != "" {
