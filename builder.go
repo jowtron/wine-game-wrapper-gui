@@ -9,7 +9,9 @@ import (
 
 // buildApp assembles the .app bundle from all prepared components.
 // embeddedResourcesDir is the path to extracted embedded resources (icons, etc).
-func buildApp(appPath string, profile GameProfile, wineDir, prefixDir, embeddedResourcesDir string, r ProgressReporter) error {
+// cdromDir, if non-empty and present, is bundled as Resources/cdrom and mapped
+// as drive d: for games that read from the CD at runtime.
+func buildApp(appPath string, profile GameProfile, wineDir, prefixDir, embeddedResourcesDir, cdromDir string, r ProgressReporter) error {
 	// Create .app directory structure
 	contentsDir := filepath.Join(appPath, "Contents")
 	macosDir := filepath.Join(contentsDir, "MacOS")
@@ -56,14 +58,31 @@ func buildApp(appPath string, profile GameProfile, wineDir, prefixDir, embeddedR
 		return fmt.Errorf("copy prefix: %w", err)
 	}
 
+	// Copy retained CD content (drive d:) if the game needs it
+	haveCDROM := false
+	if cdromDir != "" {
+		if _, err := os.Stat(cdromDir); err == nil {
+			r.Log("  Copying retained CD content...")
+			cmd := exec.Command("cp", "-R", cdromDir, filepath.Join(resourcesDir, "cdrom"))
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("copy CD content: %w", err)
+			}
+			haveCDROM = true
+		}
+	}
+
 	// Fix dosdevices to use relative paths
 	dosdevicesDir := filepath.Join(prefixDestDir, "dosdevices")
 	os.MkdirAll(dosdevicesDir, 0755)
 	// Remove existing symlinks and recreate with relative paths
 	os.Remove(filepath.Join(dosdevicesDir, "c:"))
 	os.Remove(filepath.Join(dosdevicesDir, "z:"))
+	os.Remove(filepath.Join(dosdevicesDir, "d:"))
 	os.Symlink("../drive_c", filepath.Join(dosdevicesDir, "c:"))
 	os.Symlink("/", filepath.Join(dosdevicesDir, "z:"))
+	if haveCDROM {
+		os.Symlink("../../cdrom", filepath.Join(dosdevicesDir, "d:"))
+	}
 
 	// Install app icon if available
 	iconDst := filepath.Join(resourcesDir, "AppIcon.icns")

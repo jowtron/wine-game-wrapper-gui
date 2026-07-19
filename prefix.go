@@ -48,7 +48,12 @@ func initWinePrefix(wineBin, prefixDir string, profile GameProfile, r ProgressRe
 		// Enable Wine virtual desktop so the game runs in a managed window
 		// with macOS title bar (close/minimize/fullscreen buttons)
 		reg.WriteString("\n[HKEY_CURRENT_USER\\Software\\Wine\\Explorer\\Desktops]\n")
-		reg.WriteString("\"Default\"=\"1920x1080\"\n")
+		reg.WriteString(fmt.Sprintf("\"Default\"=\"%s\"\n", profile.Desktop))
+		if len(profile.RetainCD) > 0 {
+			// Present drive d: as a CD-ROM so CD checks pass
+			reg.WriteString("\n[HKEY_LOCAL_MACHINE\\Software\\Wine\\Drives]\n")
+			reg.WriteString("\"d:\"=\"cdrom\"\n")
+		}
 		regFile.WriteString(reg.String())
 		regFile.Close()
 		regCmd := exec.Command(wine, "regedit", regFile.Name())
@@ -184,21 +189,9 @@ func registerOtvdmOverrides(wineBin, prefixDir string, names []string, r Progres
 	return nil
 }
 
-// installGameFiles copies game files and music into the prefix.
-func installGameFiles(gameFilesDir, musicDir, prefixDir string, profile GameProfile, r ProgressReporter) error {
-	// Copy game files
-	gameDestDir := filepath.Join(prefixDir, "drive_c", profile.GameDir)
-	if err := os.MkdirAll(gameDestDir, 0755); err != nil {
-		return err
-	}
-
-	r.Logf("  Copying game files to %s...", profile.GameDir)
-	cmd := exec.Command("cp", "-R", gameFilesDir+"/.", gameDestDir)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("copy game files: %w", err)
-	}
-
-	// Copy music (FLAC files)
+// installMusic copies converted audio tracks into the prefix's C:\music,
+// the directory mcicda.dll reads tracks from.
+func installMusic(musicDir, prefixDir string, r ProgressReporter) error {
 	musicDestDir := filepath.Join(prefixDir, "drive_c", "music")
 	if err := os.MkdirAll(musicDestDir, 0755); err != nil {
 		return err
@@ -212,7 +205,7 @@ func installGameFiles(gameFilesDir, musicDir, prefixDir string, profile GameProf
 	count := 0
 	for _, e := range entries {
 		name := e.Name()
-		lower := toLower(name)
+		lower := strings.ToLower(name)
 		if !hasAnySuffix(lower, ".flac", ".wav", ".mp3", ".ogg", ".opus") {
 			continue
 		}
@@ -251,21 +244,9 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-func toLower(s string) string {
-	result := make([]byte, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 32
-		}
-		result[i] = c
-	}
-	return string(result)
-}
-
 func hasAnySuffix(s string, suffixes ...string) bool {
 	for _, suffix := range suffixes {
-		if len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix {
+		if strings.HasSuffix(s, suffix) {
 			return true
 		}
 	}
@@ -275,7 +256,7 @@ func hasAnySuffix(s string, suffixes ...string) bool {
 // installKeyremap installs keyhook.exe, keyremap.dll and generates keyremap.ini
 // in the prefix for keyboard remapping via a global WH_GETMESSAGE hook.
 func installKeyremap(resourcesDir, prefixDir string, profile GameProfile, r ProgressReporter) error {
-	if len(profile.ScancodeMap) == 0 {
+	if len(profile.Keymap) == 0 {
 		return nil
 	}
 
@@ -304,40 +285,16 @@ func installKeyremap(resourcesDir, prefixDir string, profile GameProfile, r Prog
 		}
 	}
 
-	// Generate keyremap.ini with VK and scancode mappings
+	// Generate keyremap.ini. Key names resolve to scancode + VK pairs via
+	// the shared keyTable (profiles are validated at load time, so lookups
+	// here cannot fail).
 	var ini strings.Builder
 	ini.WriteString("[remap]\n")
-	// VK code mapping table (from ScancodeEntry which stores scancodes,
-	// we need to derive VK codes too)
-	// Map: From scancode -> source VK, To scancode -> target VK
-	scToVK := map[byte]byte{
-		0x08: 0x37, // 7
-		0x09: 0x38, // 8
-		0x0A: 0x39, // 9
-		0x16: 0x55, // U
-		0x17: 0x49, // I
-		0x18: 0x4F, // O
-		0x24: 0x4A, // J
-		0x25: 0x4B, // K
-		0x26: 0x4C, // L
-		0x47: 0x67, // Numpad 7
-		0x48: 0x68, // Numpad 8
-		0x49: 0x69, // Numpad 9
-		0x4B: 0x64, // Numpad 4
-		0x4C: 0x65, // Numpad 5
-		0x4D: 0x66, // Numpad 6
-		0x4F: 0x61, // Numpad 1
-		0x50: 0x62, // Numpad 2
-		0x51: 0x63, // Numpad 3
-	}
-
-	for _, e := range profile.ScancodeMap {
-		srcVK, ok1 := scToVK[e.From]
-		dstVK, ok2 := scToVK[e.To]
-		if ok1 && ok2 {
-			// Format: src_vk=dst_vk,src_scancode,dst_scancode
-			ini.WriteString(fmt.Sprintf("%02X=%02X,%02X,%02X\n", srcVK, dstVK, e.From, e.To))
-		}
+	for _, e := range profile.Keymap {
+		from, _ := LookupKey(e.From)
+		to, _ := LookupKey(e.To)
+		// Format: src_vk=dst_vk,src_scancode,dst_scancode
+		ini.WriteString(fmt.Sprintf("%02X=%02X,%02X,%02X\n", from.VK, to.VK, from.Scancode, to.Scancode))
 	}
 
 	iniPath := filepath.Join(driveC, "keyremap.ini")
@@ -345,6 +302,6 @@ func installKeyremap(resourcesDir, prefixDir string, profile GameProfile, r Prog
 		return fmt.Errorf("write keyremap.ini: %w", err)
 	}
 
-	r.Logf("  Installed key remapping (%d keys)", len(profile.ScancodeMap))
+	r.Logf("  Installed key remapping (%d keys)", len(profile.Keymap))
 	return nil
 }

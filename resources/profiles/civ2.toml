@@ -1,0 +1,12 @@
+# Civilization II Multiplayer Gold Edition (1998) — Win32, InstallShield 5 CD.
+# Game files are extracted from data1.cab (requires: brew install unshield).
+# The game reads throne-room and wonder videos from the CD at runtime, so
+# those directories are bundled and mapped as drive d:.
+name = "Civilization II"
+slug = "civ2"
+exe = "civ2.exe"
+win16 = false
+game_dir = "Civ2"
+install = "extract-installshield"
+retain_cd = ["Civ2/KINGS", "Civ2/VIDEO"]
+cd_label = "CIV2_MGE"

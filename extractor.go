@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -68,42 +67,6 @@ func resolveBINPath(cuePath string) (string, error) {
 // extractTracks splits a CUE/BIN into individual tracks using pure Go.
 func extractTracks(binPath, cuePath, outputDir string, r ProgressReporter) error {
 	return splitCUEBIN(binPath, cuePath, outputDir, r)
-}
-
-// extractGameFiles mounts an ISO and copies game files to destDir.
-func extractGameFiles(isoPath, destDir string, r ProgressReporter) error {
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return fmt.Errorf("create game dir: %w", err)
-	}
-
-	// Create a temp mount point
-	mountPoint, err := os.MkdirTemp("", "wine-game-iso-")
-	if err != nil {
-		return fmt.Errorf("create mount point: %w", err)
-	}
-	defer os.RemoveAll(mountPoint)
-
-	// Mount the ISO
-	r.Logf("  Mounting %s...", filepath.Base(isoPath))
-	cmd := exec.Command("hdiutil", "mount", "-mountpoint", mountPoint, "-nobrowse", isoPath)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("hdiutil mount failed: %w", err)
-	}
-
-	// Ensure we unmount when done
-	defer func() {
-		detach := exec.Command("hdiutil", "detach", mountPoint, "-force")
-		detach.Run()
-	}()
-
-	// Copy all files from mounted volume
-	r.Logf("  Copying game files...")
-	cmd = exec.Command("cp", "-R", mountPoint+"/.", destDir)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("copy game files failed: %w", err)
-	}
-
-	return nil
 }
 
 // findDataTrackISO finds the ISO file (track01) in the extraction output directory.

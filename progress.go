@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -52,6 +53,25 @@ func (r *WailsReporter) Error(msg string) {
 func (r *WailsReporter) Writer() io.Writer {
 	return &eventWriter{r: r}
 }
+
+// CLIReporter prints progress to stdout for headless builds.
+type CLIReporter struct{}
+
+func NewCLIReporter() *CLIReporter { return &CLIReporter{} }
+
+func (r *CLIReporter) Log(msg string) { fmt.Println(msg) }
+
+func (r *CLIReporter) Logf(format string, args ...interface{}) {
+	fmt.Printf(format+"\n", args...)
+}
+
+func (r *CLIReporter) Step(step, total int, name string) {
+	fmt.Printf("[%d/%d] %s\n", step, total, name)
+}
+
+func (r *CLIReporter) Error(msg string) { fmt.Fprintln(os.Stderr, msg) }
+
+func (r *CLIReporter) Writer() io.Writer { return &eventWriter{r: r} }
 
 // eventWriter splits subprocess output into lines and emits each as a log event.
 type eventWriter struct {

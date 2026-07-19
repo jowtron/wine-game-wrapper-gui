@@ -20,9 +20,13 @@ PREFIX="$APP_DIR/Resources/wineprefix"
 
 # Fix dosdevices symlinks (they break when .app is moved)
 mkdir -p "$PREFIX/dosdevices"
-rm -f "$PREFIX/dosdevices/c:" "$PREFIX/dosdevices/z:"
+rm -f "$PREFIX/dosdevices/c:" "$PREFIX/dosdevices/z:" "$PREFIX/dosdevices/d:"
 ln -s ../drive_c "$PREFIX/dosdevices/c:"
 ln -s / "$PREFIX/dosdevices/z:"
+# Map bundled CD content as drive d: (games that read videos/music from CD)
+if [ -d "$APP_DIR/Resources/cdrom" ]; then
+    ln -s ../../cdrom "$PREFIX/dosdevices/d:"
+fi
 
 # Force kill all Wine processes belonging to this app.
 # Finds wineserver by path, then kills its children (winedevice.exe etc.)

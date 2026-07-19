@@ -4,124 +4,122 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-// applyGamePatches applies any built-in patches for the given game profile.
-// gameFilesDir is the directory containing the extracted game files.
-// patchesDir is the path to the extracted embedded patches directory (may be empty).
-func applyGamePatches(gameFilesDir, patchesDir string, profile GameProfile, r ProgressReporter) error {
-	switch profile.Slug {
-	case "civnet":
-		return applyCivNetPatches(gameFilesDir, patchesDir, r)
-	default:
-		return nil
-	}
-}
-
-// applyCivNetPatches applies the official 1.02 patch and widescreen fix to CivNet.
-func applyCivNetPatches(gameFilesDir, patchesDir string, r ProgressReporter) error {
-	// Step 1: Apply official 1.02 patch (copy updated files over game dir)
-	civnetPatchDir := filepath.Join(patchesDir, "civnet")
-	if _, err := os.Stat(civnetPatchDir); err == nil {
-		r.Log("  Applying CivNet v1.02 patch...")
-		entries, err := os.ReadDir(civnetPatchDir)
-		if err != nil {
-			return fmt.Errorf("read patch dir: %w", err)
+// applyGamePatches applies the profile's declarative patches to the installed
+// game directory: overlay file sets first, then hex patches.
+func applyGamePatches(gameDir, patchesDir string, profile GameProfile, r ProgressReporter) error {
+	for _, o := range profile.Overlays {
+		if err := applyOverlay(gameDir, patchesDir, o, r); err != nil {
+			return err
 		}
-		count := 0
-		for _, e := range entries {
-			if e.IsDir() {
+	}
+	for _, h := range profile.HexPatches {
+		if err := applyHexPatch(gameDir, h, r); err != nil {
+			if h.Optional {
+				r.Logf("  Warning: %s: %v (continuing)", h.describe(), err)
 				continue
 			}
-			name := e.Name()
-			// Skip the patch readme
-			if name == "patch.txt" {
-				continue
-			}
-			src := filepath.Join(civnetPatchDir, name)
-			// Match case-insensitively against existing game files
-			dst := findCaseInsensitive(gameFilesDir, name)
-			if dst == "" {
-				// File doesn't exist yet, just copy with original name
-				dst = filepath.Join(gameFilesDir, name)
-			}
-			if err := copyFile(src, dst); err != nil {
-				return fmt.Errorf("apply patch file %s: %w", name, err)
-			}
-			count++
+			return err
 		}
-		r.Logf("  Applied %d patch files (v1.02)", count)
-	} else {
-		r.Log("  Warning: CivNet 1.02 patch files not found, skipping")
 	}
-
-	// Step 2: Apply widescreen hex fix to civnet.exe
-	// The widescreen patch changes the max window size from 1300x1048 to 32000x32000
-	// by modifying 5 bytes at offset 0x147cff in the v1.02 civnet.exe:
-	//   Old: 18 04 68 14 05  (push 1048; push 1300)
-	//   New: 00 7d 68 00 7d  (push 32000; push 32000)
-	exePath := findCaseInsensitive(gameFilesDir, "civnet.exe")
-	if exePath == "" {
-		return fmt.Errorf("civnet.exe not found in game files")
-	}
-
-	r.Log("  Applying widescreen patch...")
-	if err := applyWidescreenPatch(exePath); err != nil {
-		r.Logf("  Warning: widescreen patch failed: %v", err)
-		// Non-fatal - game still works without it
-		return nil
-	}
-	r.Log("  Applied widescreen patch (max window: 32000x32000)")
-
 	return nil
 }
 
-// applyWidescreenPatch modifies civnet.exe v1.02 to support widescreen resolutions.
-func applyWidescreenPatch(exePath string) error {
-	const offset = 0x147cff
-	oldBytes := []byte{0x18, 0x04, 0x68, 0x14, 0x05}
-	newBytes := []byte{0x00, 0x7d, 0x68, 0x00, 0x7d}
+// applyOverlay copies the files of resources/patches/<Source> over the game
+// directory, matching existing filenames case-insensitively.
+func applyOverlay(gameDir, patchesDir string, o OverlayPatch, r ProgressReporter) error {
+	if patchesDir == "" {
+		r.Logf("  Warning: patch files for %q not found, skipping", o.Source)
+		return nil
+	}
+	srcDir := filepath.Join(patchesDir, o.Source)
+	if _, err := os.Stat(srcDir); err != nil {
+		r.Logf("  Warning: patch files for %q not found, skipping", o.Source)
+		return nil
+	}
 
-	data, err := os.ReadFile(exePath)
+	skip := map[string]bool{}
+	for _, s := range o.Skip {
+		skip[strings.ToLower(s)] = true
+	}
+
+	entries, err := os.ReadDir(srcDir)
 	if err != nil {
-		return fmt.Errorf("read exe: %w", err)
+		return fmt.Errorf("read patch dir %s: %w", srcDir, err)
 	}
-
-	// Verify file size (v1.02 is exactly 2,073,600 bytes)
-	if len(data) != 2073600 {
-		return fmt.Errorf("unexpected exe size %d (expected 2073600 for v1.02)", len(data))
-	}
-
-	// Verify the expected bytes are present
-	if offset+len(oldBytes) > len(data) {
-		return fmt.Errorf("offset 0x%x out of range", offset)
-	}
-
-	for i, b := range oldBytes {
-		if data[offset+i] != b {
-			// Check if already patched
-			alreadyPatched := true
-			for j, nb := range newBytes {
-				if data[offset+j] != nb {
-					alreadyPatched = false
-					break
-				}
-			}
-			if alreadyPatched {
-				return nil // Already patched
-			}
-			return fmt.Errorf("byte mismatch at offset 0x%x+%d: expected 0x%02x, got 0x%02x (not v1.02?)",
-				offset, i, b, data[offset+i])
+	count := 0
+	for _, e := range entries {
+		if e.IsDir() || skip[strings.ToLower(e.Name())] {
+			continue
 		}
+		src := filepath.Join(srcDir, e.Name())
+		dst := findCaseInsensitive(gameDir, e.Name())
+		if dst == "" {
+			dst = filepath.Join(gameDir, e.Name())
+		}
+		if err := copyFile(src, dst); err != nil {
+			return fmt.Errorf("apply patch file %s: %w", e.Name(), err)
+		}
+		count++
+	}
+	r.Logf("  Applied overlay %q (%d files)", o.Source, count)
+	return nil
+}
+
+func (h HexPatch) describe() string {
+	if h.Desc != "" {
+		return h.Desc
+	}
+	return fmt.Sprintf("hex patch %s@0x%x", h.File, h.Offset)
+}
+
+// applyHexPatch applies an in-place byte patch with verification.
+// It is idempotent: if the replace bytes are already present, it succeeds.
+func applyHexPatch(gameDir string, h HexPatch, r ProgressReporter) error {
+	path := findCaseInsensitive(gameDir, h.File)
+	if path == "" {
+		return fmt.Errorf("%s not found in game files", h.File)
 	}
 
-	// Apply the patch
-	copy(data[offset:], newBytes)
-
-	if err := os.WriteFile(exePath, data, 0755); err != nil {
-		return fmt.Errorf("write patched exe: %w", err)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", h.File, err)
 	}
 
+	if h.ExpectSize > 0 && int64(len(data)) != h.ExpectSize {
+		return fmt.Errorf("unexpected size %d for %s (expected %d — wrong version?)", len(data), h.File, h.ExpectSize)
+	}
+	end := h.Offset + int64(len(h.Expect))
+	if h.Offset < 0 || end > int64(len(data)) {
+		return fmt.Errorf("offset 0x%x out of range for %s", h.Offset, h.File)
+	}
+
+	matches := func(want []int) bool {
+		for i, b := range want {
+			if data[h.Offset+int64(i)] != byte(b) {
+				return false
+			}
+		}
+		return true
+	}
+
+	if matches(h.Replace) {
+		r.Logf("  %s: already applied", h.describe())
+		return nil
+	}
+	if !matches(h.Expect) {
+		return fmt.Errorf("byte mismatch at 0x%x in %s (wrong version?)", h.Offset, h.File)
+	}
+
+	for i, b := range h.Replace {
+		data[h.Offset+int64(i)] = byte(b)
+	}
+	if err := os.WriteFile(path, data, 0755); err != nil {
+		return fmt.Errorf("write patched %s: %w", h.File, err)
+	}
+	r.Logf("  Applied %s", h.describe())
 	return nil
 }
 
@@ -132,9 +130,9 @@ func findCaseInsensitive(dir, name string) string {
 	if err != nil {
 		return ""
 	}
-	lowerName := toLower(name)
+	lowerName := strings.ToLower(name)
 	for _, e := range entries {
-		if toLower(e.Name()) == lowerName {
+		if strings.ToLower(e.Name()) == lowerName {
 			return filepath.Join(dir, e.Name())
 		}
 	}

@@ -1,0 +1,10 @@
+# Sid Meier's Colonization for Windows (1995) — Win16.
+# The Windows game lives unpacked in the CD's INSTALL/ directory, except
+# colonize.exe which is ARCV-compressed (COLONIZE.$00). Until ARCV extraction
+# lands, run the Win16 setup during the build to produce the real install.
+name = "Colonization"
+slug = "colonization"
+exe = "COLONIZE.EXE"
+win16 = true
+game_dir = "COLONIZE"
+install = "run-installer:INSTALL/SETUP.EXE"

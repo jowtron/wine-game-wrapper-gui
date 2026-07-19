@@ -3,6 +3,7 @@ module github.com/jowtron/wine-game-wrapper-gui
 go 1.23.2
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/mewkiz/flac v1.0.13
 	github.com/wailsapp/wails/v2 v2.11.0
 )

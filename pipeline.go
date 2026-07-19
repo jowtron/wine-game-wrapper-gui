@@ -45,6 +45,11 @@ func ensurePATH() {
 func runPipeline(config BuildConfig, r ProgressReporter) error {
 	ensurePATH()
 
+	// Surface any profile files that failed to load (bad user TOML etc.)
+	for _, e := range ProfileLoadErrors() {
+		r.Logf("Warning: skipped profile %s", e)
+	}
+
 	// Resolve game profile
 	var profile GameProfile
 	if config.GameSlug != "" && config.GameSlug != "custom" {
@@ -130,9 +135,9 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 	defer os.RemoveAll(tmpDir)
 
 	tracksDir := filepath.Join(tmpDir, "tracks")
-	gameFilesDir := filepath.Join(tmpDir, "game")
 	musicDir := filepath.Join(tmpDir, "music")
 	prefixDir := filepath.Join(tmpDir, "prefix")
+	cdromDir := filepath.Join(tmpDir, "cdrom")
 
 	// Step 1: Obtain Wine
 	r.Step(1, 7, "Obtaining Wine...")
@@ -148,63 +153,21 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 	if err := extractTracks(binPath, absQue, tracksDir, r); err != nil {
 		return fmt.Errorf("extract tracks: %w", err)
 	}
-
-	// Step 3: Extract game files from data track
-	r.Step(3, 7, "Extracting game files from ISO...")
 	isoPath, err := findDataTrackISO(tracksDir)
 	if err != nil {
 		return fmt.Errorf("find data track: %w", err)
 	}
-	if err := extractGameFiles(isoPath, gameFilesDir, r); err != nil {
-		return fmt.Errorf("extract game files: %w", err)
-	}
 
-	// Apply game patches (e.g. CivNet 1.02 patch + widescreen fix)
-	patchesDir := findPatchesDir(resourcesDir)
-	if patchesDir != "" {
-		r.Log("  Applying game patches...")
-		if err := applyGamePatches(gameFilesDir, patchesDir, profile, r); err != nil {
-			return fmt.Errorf("apply patches: %w", err)
-		}
-	}
-
-	// Step 4: Convert audio to FLAC
-	r.Step(4, 7, "Converting audio tracks to FLAC...")
-	if err := os.MkdirAll(musicDir, 0755); err != nil {
-		return fmt.Errorf("create music dir: %w", err)
-	}
-	entries, err := os.ReadDir(tracksDir)
-	if err != nil {
-		return fmt.Errorf("read tracks dir: %w", err)
-	}
-	for _, e := range entries {
-		name := e.Name()
-		lower := toLower(name)
-		if hasAnySuffix(lower, ".wav") && !hasAnySuffix(lower, "track01.wav") {
-			src := filepath.Join(tracksDir, name)
-			dst := filepath.Join(musicDir, name)
-			if err := os.Rename(src, dst); err != nil {
-				if err := copyFile(src, dst); err != nil {
-					return fmt.Errorf("move %s: %w", name, err)
-				}
-				os.Remove(src)
-			}
-		}
-	}
-	trackCount, err := convertToFLAC(musicDir, r)
-	if err != nil {
-		return fmt.Errorf("convert to FLAC: %w", err)
-	}
-	r.Logf("  Converted %d audio tracks", trackCount)
-
-	// Step 5: Initialize Wine prefix
-	r.Step(5, 7, "Initializing Wine prefix...")
+	// Step 3: Initialize Wine prefix (before game install: the run-installer
+	// strategy needs a live prefix to run the CD's setup program in)
+	r.Step(3, 7, "Initializing Wine prefix...")
 	if err := initWinePrefix(wineBin, prefixDir, profile, r); err != nil {
 		return fmt.Errorf("init Wine prefix: %w", err)
 	}
 
-	// Step 6: Install components into prefix
-	r.Step(6, 7, "Installing game components...")
+	// Step 4: Install components into prefix (otvdm must precede a Win16
+	// installer run; mcicda and keyremap are position-independent)
+	r.Step(4, 7, "Installing components...")
 	if err := installMcicda(dllPath, prefixDir, r); err != nil {
 		return fmt.Errorf("install mcicda.dll: %w", err)
 	}
@@ -225,17 +188,52 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 		}
 	}
 
-	if err := installGameFiles(gameFilesDir, musicDir, prefixDir, profile, r); err != nil {
-		return fmt.Errorf("install game files: %w", err)
-	}
-
 	if err := installKeyremap(resourcesDir, prefixDir, profile, r); err != nil {
 		return fmt.Errorf("install keyremap: %w", err)
 	}
 
+	// Step 5: Install game files per the profile's install strategy,
+	// apply patches, and stage any retained CD content
+	r.Step(5, 7, fmt.Sprintf("Installing game (%s)...", profile.Install))
+	if err := installGameFromCD(isoPath, profile, wineBin, prefixDir, resourcesDir, cdromDir, r); err != nil {
+		return fmt.Errorf("install game: %w", err)
+	}
+
+	// Step 6: Convert audio to FLAC and install into the prefix
+	r.Step(6, 7, "Converting audio tracks to FLAC...")
+	if err := os.MkdirAll(musicDir, 0755); err != nil {
+		return fmt.Errorf("create music dir: %w", err)
+	}
+	entries, err := os.ReadDir(tracksDir)
+	if err != nil {
+		return fmt.Errorf("read tracks dir: %w", err)
+	}
+	for _, e := range entries {
+		name := e.Name()
+		lower := strings.ToLower(name)
+		if strings.HasSuffix(lower, ".wav") && !strings.HasSuffix(lower, "track01.wav") {
+			src := filepath.Join(tracksDir, name)
+			dst := filepath.Join(musicDir, name)
+			if err := os.Rename(src, dst); err != nil {
+				if err := copyFile(src, dst); err != nil {
+					return fmt.Errorf("move %s: %w", name, err)
+				}
+				os.Remove(src)
+			}
+		}
+	}
+	trackCount, err := convertToFLAC(musicDir, r)
+	if err != nil {
+		return fmt.Errorf("convert to FLAC: %w", err)
+	}
+	r.Logf("  Converted %d audio tracks", trackCount)
+	if err := installMusic(musicDir, prefixDir, r); err != nil {
+		return fmt.Errorf("install music: %w", err)
+	}
+
 	// Step 7: Assemble .app bundle
 	r.Step(7, 7, "Building .app bundle...")
-	if err := buildApp(appPath, profile, wineDir, prefixDir, resourcesDir, r); err != nil {
+	if err := buildApp(appPath, profile, wineDir, prefixDir, resourcesDir, cdromDir, r); err != nil {
 		return fmt.Errorf("build .app: %w", err)
 	}
 

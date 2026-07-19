@@ -1,0 +1,49 @@
+# Sid Meier's CivNet (1995) — Win16, runs from CD contents.
+name = "CivNet"
+slug = "civnet"
+exe = "CIVNET.EXE"
+win16 = true
+game_dir = "CivNet"
+install = "copy-cd-root"
+
+# Official MicroProse v1.02 patch (files under resources/patches/civnet)
+[[overlay]]
+source = "civnet"
+skip = ["patch.txt"]
+
+# Widescreen fix: expand max window size from 1300x1048 to 32000x32000.
+# Only valid against the v1.02 exe (exactly 2,073,600 bytes).
+[[hexpatch]]
+file = "civnet.exe"
+desc = "widescreen fix (max window 32000x32000)"
+expect_size = 2073600
+offset = 0x147cff
+expect = [0x18, 0x04, 0x68, 0x14, 0x05]
+replace = [0x00, 0x7d, 0x68, 0x00, 0x7d]
+optional = true
+
+# Remap 789/uo/jkl to the numpad for unit movement (I kept for irrigate).
+[[keymap]]
+from = "7"
+to = "num7"
+[[keymap]]
+from = "8"
+to = "num8"
+[[keymap]]
+from = "9"
+to = "num9"
+[[keymap]]
+from = "u"
+to = "num4"
+[[keymap]]
+from = "o"
+to = "num6"
+[[keymap]]
+from = "j"
+to = "num1"
+[[keymap]]
+from = "k"
+to = "num2"
+[[keymap]]
+from = "l"
+to = "num3"
