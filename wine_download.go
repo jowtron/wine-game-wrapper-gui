@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	gcenxReleasesAPI = "https://api.github.com/repos/Gcenx/wine-apple-gaming/releases/latest"
+	gcenxReleasesAPI = "https://api.github.com/repos/Gcenx/macOS_Wine_builds/releases"
 	cacheSubdir      = "wine-game-wrapper"
 )
 
@@ -69,7 +69,28 @@ type ghAsset struct {
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
-// findWineDownloadURL queries the gcenx GitHub releases API for the latest Wine archive.
+// findStableAsset returns the best wine-stable tar.xz asset from a release.
+func findStableAsset(release ghRelease) *ghAsset {
+	arch := runtime.GOARCH
+	var fallback *ghAsset
+	for i, asset := range release.Assets {
+		name := strings.ToLower(asset.Name)
+		if !strings.HasSuffix(name, ".tar.xz") || !strings.Contains(name, "wine-stable") {
+			continue
+		}
+		if strings.Contains(name, "universal") ||
+			strings.Contains(name, arch) ||
+			strings.Contains(name, "osx64") {
+			return &release.Assets[i]
+		}
+		if fallback == nil {
+			fallback = &release.Assets[i]
+		}
+	}
+	return fallback
+}
+
+// findWineDownloadURL queries the gcenx GitHub releases API for the latest stable Wine archive.
 func findWineDownloadURL() (string, string, error) {
 	resp, err := http.Get(gcenxReleasesAPI)
 	if err != nil {
@@ -81,33 +102,19 @@ func findWineDownloadURL() (string, string, error) {
 		return "", "", fmt.Errorf("GitHub API returned %d", resp.StatusCode)
 	}
 
-	var release ghRelease
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return "", "", fmt.Errorf("parse release JSON: %w", err)
+	var releases []ghRelease
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return "", "", fmt.Errorf("parse releases JSON: %w", err)
 	}
 
-	// Look for a tar.xz asset matching our architecture
-	arch := runtime.GOARCH
-	for _, asset := range release.Assets {
-		name := strings.ToLower(asset.Name)
-		// Prefer universal or matching arch
-		if strings.HasSuffix(name, ".tar.xz") {
-			if strings.Contains(name, "universal") ||
-				strings.Contains(name, arch) ||
-				strings.Contains(name, "x86_64") {
-				return asset.BrowserDownloadURL, asset.Name, nil
-			}
-		}
-	}
-
-	// Fall back to any tar.xz
-	for _, asset := range release.Assets {
-		if strings.HasSuffix(strings.ToLower(asset.Name), ".tar.xz") {
+	// Find the first release that contains a wine-stable asset
+	for _, release := range releases {
+		if asset := findStableAsset(release); asset != nil {
 			return asset.BrowserDownloadURL, asset.Name, nil
 		}
 	}
 
-	return "", "", fmt.Errorf("no suitable Wine archive found in release %s", release.TagName)
+	return "", "", fmt.Errorf("no wine-stable release found")
 }
 
 // downloadFile downloads a URL to a local path, reporting progress.
@@ -175,7 +182,7 @@ func downloadWine(r ProgressReporter) (string, error) {
 		return extractedDir, nil
 	}
 
-	r.Log("  Finding latest Wine release from gcenx/wine-apple-gaming...")
+	r.Log("  Finding latest Wine release from Gcenx/macOS_Wine_builds...")
 	url, filename, err := findWineDownloadURL()
 	if err != nil {
 		return "", fmt.Errorf("find download URL: %w", err)
@@ -227,13 +234,14 @@ func downloadWine(r ProgressReporter) (string, error) {
 }
 
 // findWineInDir searches for the wine binary in an extracted directory tree.
+// Handles both flat layouts (wine/bin/wine) and .app bundles
+// (Wine Stable.app/Contents/Resources/wine/bin/wine).
 func findWineInDir(dir string) (string, error) {
 	// Check if wine binary is directly at dir/bin/wine
 	if _, err := os.Stat(filepath.Join(dir, "bin", "wine")); err == nil {
 		return dir, nil
 	}
 
-	// Search one level deep
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", err
@@ -243,9 +251,18 @@ func findWineInDir(dir string) (string, error) {
 			continue
 		}
 		candidate := filepath.Join(dir, e.Name())
+
+		// Check candidate/bin/wine (flat layout)
 		if _, err := os.Stat(filepath.Join(candidate, "bin", "wine")); err == nil {
 			return candidate, nil
 		}
+
+		// Check .app bundle: candidate/Contents/Resources/wine/bin/wine
+		appWine := filepath.Join(candidate, "Contents", "Resources", "wine")
+		if _, err := os.Stat(filepath.Join(appWine, "bin", "wine")); err == nil {
+			return appWine, nil
+		}
+
 		// Check one more level (e.g. "Wine Stable/wine/")
 		sub, _ := os.ReadDir(candidate)
 		for _, s := range sub {
