@@ -28,8 +28,10 @@ win16 = true                     # needs otvdm (Win16 compatibility layer)
 game_dir = "CivNet"              # directory under C:\
 install = "copy-cd-root"         # how files get from the CD into the prefix
 desktop = "1920x1080"            # Wine virtual desktop size
+theme = "auto"                   # Windows UI theme: light | dark | auto (follows macOS)
 retain_cd = ["Civ2/VIDEO"]       # CD paths to bundle and map as drive d:
-cd_label = "CIV2_MGE"            # volume label for the emulated d:
+cd_label = "Civ2:MGE v1.0"       # volume label for emulated d: — MUST match the real disc
+                                 #   (game scans CD drives for it; read it from the ISO PVD)
 
 [[overlay]]                      # copy a patch file set over the game dir
 source = "civnet"                # -> resources/patches/civnet/
@@ -133,3 +135,15 @@ Win16 games often use a busy-wait message loop (`PeekMessage` in a tight loop), 
 ### CD audio
 
 `mcicda.dll` intercepts MCI cdaudio commands and plays `C:\music\trackNN.{flac,wav,mp3,ogg,opus}` through Wine's waveOut (CoreAudio). Track numbering matches the original CD layout (track 1 = data track, so audio starts at track 2).
+
+### Saves live outside the bundle
+
+The game directory ships as a pristine master at `Resources/game/<GameDir>`. On first launch the launcher copies it to `~/Library/Application Support/wine-game-wrapper/<slug>/<GameDir>` and symlinks that into the prefix's `drive_c`, so saves/preferences survive rebuilding or replacing the `.app`. **Consequence:** the *running* game files are the external copy — once seeded, changing game files inside the bundle (e.g. editing the exe) does **not** reach an existing install.
+
+### Windows UI theme
+
+The `theme` profile field (`light`/`dark`/`auto`) themes the Windows chrome (menus, dialogs, buttons, title bar) via `HKCU\Control Panel\Colors`, **not** the game's own bitmap canvas. `auto` ships both palettes and the launcher applies the one matching macOS's appearance at startup. Static `dark`/`light` is baked into the prefix at build time.
+
+### Win16 vs Win32 differences
+
+Win16 games (CivNet, Colonization) run inside the otvdm host; Win32 games (Civ2) run directly under Wine. This matters for the Dock: Wine's Mac driver can't read Win16 (NE) icon resources, so those keep the icon set on the Wine binary — but a Win32 game's PE icon **is** read and overrides ours, showing the game's own (often 16-colour) icon. Win32 game windows also tend to open behind and not grab focus. Both are open problems — see `TODO-civ2-polish.md`.
