@@ -9,12 +9,13 @@ win16 = false
 game_dir = "Civ2"
 theme = "auto"  # follow the macOS light/dark appearance for menus/dialogs/chrome
 install = "extract-installshield"
-# KINGS/VIDEO are streamed from CD at runtime; the small root files and
-# Civ2/civ2.exe are retained as CD-check markers. The label must match the
-# real disc: the game scans CD-ROM drives for it.
+# CD-check markers only. The label must match the real disc (the game scans
+# CD-ROM drives for it) and a few small root files stand in as the disc.
+# The KINGS/VIDEO movie dirs are intentionally NOT retained: they are Intel
+# Indeo AVIs that Wine can't render, and shipping them makes the game hang on
+# the intro/wonder/council movies. Without them the game skips movies and
+# plays fine. See TODO: getting the movies to actually render under Wine.
 retain_cd = [
-  "Civ2/KINGS",
-  "Civ2/VIDEO",
   "Civ2/civ2.exe",
   "DATA.TAG",
   "lang.dat",
