@@ -66,14 +66,25 @@ export DYLD_FALLBACK_LIBRARY_PATH="$APP_DIR/Resources/wine/lib"
 
 # Auto theme: apply the Windows palette matching the current macOS appearance.
 # (Static dark/light themes are already baked into the prefix at build time.)
+#
+# This runs with a bounded wait: a wedged Wine/wineserver must never hang the
+# whole app launch (that shows as "can't open ... not responding"). If the
+# regedit doesn't finish in time we kill it and launch the game anyway (worst
+# case: the game starts unthemed this once). We do NOT kill wineserver here —
+# the game reuses this warm server instead of paying a second cold start.
 if [ -d "$APP_DIR/Resources/themes" ]; then
     if defaults read -g AppleInterfaceStyle 2>/dev/null | grep -qi dark; then
         MODE=dark
     else
         MODE=light
     fi
-    "$WINE" regedit "$APP_DIR/Resources/themes/$MODE.reg" 2>/dev/null
-    "$WINESERVER" -k 2>/dev/null
+    "$WINE" regedit "$APP_DIR/Resources/themes/$MODE.reg" >/dev/null 2>&1 &
+    THEME_PID=$!
+    for _ in $(seq 1 20); do
+        kill -0 "$THEME_PID" 2>/dev/null || break
+        sleep 1
+    done
+    kill -9 "$THEME_PID" 2>/dev/null
 fi
 
 # Clean up on exit: graceful shutdown, then force kill stragglers
