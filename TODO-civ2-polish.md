@@ -78,8 +78,17 @@ mountmgr source (device.c `add_dos_device`, unixlib.c `add_drive`):
 
 Fixes: the launcher now removes `d::` alongside the other links, and builder.go
 strips all `*::` device links from the shipped prefix (they're build-machine
-artifacts). The installed app's registry was repaired in place
-(floppy→cdrom; system.reg backup in the session scratchpad).
+artifacts). The installed app's registry was repaired in place (floppy→cdrom).
+Backups + the patch tool live in `~/Library/Application Support/
+wine-game-wrapper/civ2/`: `civ2.exe.pre-icon-hide`, `system.reg.backup-2026-07-21`,
+`hide_pe_icon.py` (`python3 hide_pe_icon.py <exe> hide|restore`).
+
+**Outcome (user-confirmed 2026-07-21):** Dock icon correct, and CD music works
+for the first time ever — the game only enables CD audio when it finds its CD
+in a CD-ROM-typed drive, which the mountmgr stealing had been silently breaking
+on every run. New build swapped into /Applications. Window-fronting on the new
+build not yet re-confirmed (the "doesn't front" report was against the old
+architecture, which cannot front).
 
 Also fixed on the way: **process leak on quit** — Wine-spawned services
 (`explorer.exe /desktop`, winedevice.exe...) show only `C:\` paths in ps and
