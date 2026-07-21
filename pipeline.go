@@ -208,6 +208,22 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 		return fmt.Errorf("install game: %w", err)
 	}
 
+	// Win32 exes carry PE icon resources that winemac.drv reads for the
+	// Dock tile, overriding the bundle icon. When we ship our own icon,
+	// hide the game's so ours wins. (Win16 NE icons are unreadable by
+	// winemac, so those games never have this problem.)
+	if !profile.Win16 {
+		iconSrc := filepath.Join(resourcesDir, "icons", profile.Slug+".icns")
+		if _, err := os.Stat(iconSrc); err == nil {
+			gameExe := filepath.Join(prefixDir, "drive_c", profile.GameDir, profile.Exe)
+			if err := hidePEGroupIcon(gameExe); err != nil {
+				r.Logf("  Warning: could not hide PE icon in %s: %v", profile.Exe, err)
+			} else {
+				r.Logf("  Hid %s's PE icon resources (bundle icon shows in Dock)", profile.Exe)
+			}
+		}
+	}
+
 	// Step 6: Convert audio to FLAC and install into the prefix
 	r.Step(6, 7, "Converting audio tracks to FLAC...")
 	if err := os.MkdirAll(musicDir, 0755); err != nil {

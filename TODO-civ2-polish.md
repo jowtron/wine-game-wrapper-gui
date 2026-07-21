@@ -1,86 +1,122 @@
-# TODO: Civ2 Dock icon + window-fronting polish
+# SOLVED: Civ2 Dock icon + window-fronting polish
 
-Two open, Win32-specific polish problems on the Civ2 (Civilization II MGE) `.app`.
-A previous session (Opus, 2026-07-21) could not solve them cleanly and caused a
-regression trying — this doc captures what was learned so the next attempt starts
-ahead. It doubles as a ready-to-use prompt for a fresh session (see bottom).
+Both Win32-specific polish problems on the Civ2 `.app` were solved on 2026-07-21
+(Fable session), after an earlier attempt (Opus, same day) hit dead ends. This doc
+records the root causes and the fix so the reasoning isn't lost. Original problem
+statement and the dead ends are preserved at the bottom — one of the earlier
+conclusions (the WM_SETICON theory) turned out to be wrong and is corrected here.
 
-## The two problems
+## Root causes (from winemac.drv source, wine-11.0)
 
-**1. The Dock icon.** When Civ2 launches, our nice icon (`resources/icons/civ2.icns`)
-shows briefly, then Wine's macOS driver replaces it with the game's own ugly
-16-colour icon. The 16-bit games (CivNet, Colonization) don't have this — winemac
-can't read their old NE-format icon resources, so the icon set on the Wine binary
-sticks; only Win32 PE icons get read and override ours.
+**Dock icon.** `macdrv_SetDesktopWindow` (window.c) calls `set_app_icon()`, which
+reads the **first RT_GROUP_ICON resource of the process's main exe** via
+`EnumResourceNamesW(NULL, RT_GROUP_ICON, ...)` (dllmain.c `macdrv_app_icon`) and
+sets it as the Dock icon when the process transforms to a regular app
+(cocoa_app.m `transformProcessToForeground:`). It is **not** the runtime
+WM_SETICON window icon, as previously concluded — the rcedit test looked like
+that only because the patched bundle exe never runs (save-redirect: the seeded
+external copy runs). civ2.exe carries five RT_GROUP_ICONs, each one 32×32
+16-colour image — that's the ugly icon. If no RT_GROUP_ICON is found, winemac
+sets `applicationIconImage:nil` → the Dock keeps the bundle/file icon.
 
-**2. The window opens behind everything.** On launch, the game's first window and
-dialogs open *behind* other windows; you must use Mission Control to surface them.
-They don't come to front / grab focus on their own.
+**Two processes, two tiles, no fronting.** The bash launcher spawned wine as a
+child, so LaunchServices saw two apps: the launcher (hidden via LSUIElement, and
+as an accessory app unable to front anything) and wine's own process (which
+transforms to Foreground with a bare "wine" identity). Additionally, `wine
+<exe>` on this Gcenx wow64-only build **always rerouted through `start.exe
+/exec`**, putting the game in yet another process: ntdll's
+`get_alternate_wineloader()` (loader.c) sees a 32-bit main exe and returns the
+path of the i386 loader **without checking it exists** (it doesn't, in a
+wow64-only build), so `load_main_exe` is abandoned (env.c). Setting
+`WINEARCH=wow64` short-circuits this (`if (force_wow64) return NULL;`) and the
+exe loads in-process. This is safe against the prefix: for a 64-bit prefix only
+`WINEARCH=win32` errors (server.c).
 
-## What was already tried (don't just redo these)
+## The fix (three parts, all in the generator)
 
-- **`LSUIElement`** (in `generateInfoPlist`, launcher.go) is `true` to hide the
-  launcher's Dock tile. This is the likely cause of Problem 2: an LSUIElement
-  "accessory" app can't activate/front its windows. Flipping to `false` DID make
-  fronting better but produced TWO Dock tiles — the bash launcher's tile AND
-  Wine's separate tile — because the launcher is a shell script that spawns wine
-  as a child process. Neither setting is right alone.
-- **rcedit PE-icon replacement** (`wine rcedit civ2.exe --set-icon our.ico` at
-  build time): mechanically worked (our multi-size icon embedded, exe still ran)
-  but was a dead end for THREE reasons:
-  1. It did **not** change the Dock tile — winemac appears to use the game's
-     *runtime* window icon (WM_SETICON), not the file's default icon resource.
-  2. The game runs `civ2.exe` from the **external save dir** (see save-redirect
-     below), not the bundle copy — so bundle-exe edits never reach an existing
-     install.
-  3. **CRITICAL REGRESSION:** running `wine` during the build while the `d:`
-     dosdevices symlink doesn't exist yet made Wine reclassify `d:` from `cdrom`
-     to `floppy` in the registry, which **broke Civ2's CD-ROM check**. Fully
-     reverted; build is back to known-good.
+1. **launcher.go** — Win32 launchers now end with
+   `exec nice -n 19 "$WINE" "$PREFIX/drive_c/$GAME_DIR/<exe>"` after
+   `export WINEARCH=wow64`, so the game runs *as* the .app's process:
+   LaunchServices keeps the bundle identity across exec (verified:
+   `lsappinfo` shows bundle path + `originalExecutablePath`) → one Dock tile,
+   bundle icon/name, and winemac's `tryToActivateIgnoringOtherApps:` can front
+   the window. The absolute unix path matters — a bare or DOS-style arg still
+   goes through start.exe. Cleanup traps can't survive exec, so a **watchdog
+   subshell** forked pre-exec waits for the PID to die, then runs
+   `wineserver -k` + the kill sweep. Win16 games keep the old spawn/wait/trap
+   launcher (otvdm runs in separate processes; exec gains nothing).
+2. **Info.plist** — `LSUIElement` is now `false` for Win32 games (the bundle
+   tile IS the game), still `true` for Win16.
+3. **peicon.go** — `hidePEGroupIcon()` renames resource type 14
+   (RT_GROUP_ICON → 0x0FFF) in the game exe: an in-place, reversible 4-byte
+   edit, pure Go, **no wine invocation at build time** (so the d:-drive/CD-check
+   regression from the rcedit attempt can't recur). Called from pipeline.go for
+   Win32 games that ship our own icns. LoadIcon in-game then finds no icon
+   (harmless: NULL class icon), and winemac leaves the Dock icon alone.
 
-## Invariants you must NOT break
+## Bonus find: the REAL cdrom→floppy mechanism (mountmgr drive stealing)
 
-- **CD check:** Civ2 scans CD-ROM drives for a disc labelled `Civ2:MGE v1.0`. The
-  build stages marker files into `Resources/cdrom`, sets that volume label, and
-  sets `d:=cdrom` in `[Software\Wine\Drives]` (prefix.go `initWinePrefix`, when
-  `retain_cd` is non-empty). The launcher symlinks `dosdevices/d: -> ../../cdrom`
-  at runtime. **Any wine invocation at build time with no `d:` symlink present
-  can clobber the drive type.** After any change, verify `d:` stays `cdrom` and
-  relaunch to confirm no "can't find the CD-ROM" dialog.
-- **Save redirect:** the game dir ships as a pristine master in
-  `Resources/game/<GameDir>`; on first launch the launcher copies it to
-  `~/Library/Application Support/wine-game-wrapper/<slug>/<GameDir>` and symlinks
-  it into `drive_c`. The RUNNING game files are the external copy — changes to
-  bundle game files don't reach an already-seeded install.
-- The launcher relies on staying alive (bash) to run cleanup traps that kill
-  wineserver on quit — any `exec`-based restructure must preserve that cleanup.
+While verifying, the installed app's registry was found freshly broken again:
+`"d:"="floppy"`, with `dosdevices/d:` rebound to `/Volumes/DOSBox Staging` (a
+mounted DMG). No build had run — this happens **at runtime**. Mechanism, from
+mountmgr source (device.c `add_dos_device`, unixlib.c `add_drive`):
 
-## Where the solution probably lives
+- wineboot at **build time** records whatever CD-like device is mounted on the
+  build machine as the prefix's `d::` DEVICE link (distinct from the `d:` mount
+  link). That link ships in the bundle.
+- At runtime, when DiskArbitration reports a volume whose device matches `X::`,
+  mountmgr **reuses that letter**: rewrites the `X:` symlink to the volume's
+  mount point and force-writes the drive type to the registry. For
+  HARDDISK-class volumes (disk images!) Wine's type-name hack writes
+  **"floppy"** — instantly breaking the CD check.
+- A letter is immune iff its `X::` link is absent AND its `X:` mount link is
+  present. The launcher always creates `d:`, so deleting `d::` makes d: safe.
+- This also reframes the original build-time regression: during a build-time
+  wine run the `d:` mount link doesn't exist yet, so the letter is "available"
+  and any mounted DMG claims it (add_drive assigns CD volumes starting at d).
+  Same mechanism, two entry points.
 
-The root cause of both problems is architectural: a bash launcher spawns wine as
-a *child* process, so there are two processes → two Dock tiles + the child's window
-can't be fronted by the accessory parent. Study how real Wine-on-Mac wrappers
-(Whisky, Porting Kit, CrossOver) achieve "one Dock tile, right icon, window fronts"
-— likely by making wine adopt the `.app` bundle's own identity/icon rather than a
-shell launcher spawning it as a child.
+Fixes: the launcher now removes `d::` alongside the other links, and builder.go
+strips all `*::` device links from the shipped prefix (they're build-machine
+artifacts). The installed app's registry was repaired in place
+(floppy→cdrom; system.reg backup in the session scratchpad).
 
-These are visual/interactive bugs that can't be fully verified headlessly — plan
-first, test on throwaway copies, and have the user confirm what they see before
-swapping anything into `/Applications`.
+Also fixed on the way: **process leak on quit** — Wine-spawned services
+(`explorer.exe /desktop`, winedevice.exe...) show only `C:\` paths in ps and
+reparent to launchd, so the old path-based pkill missed them (a stale explorer
+from a morning run was found still alive). `kill_wine_procs` now also sweeps
+any `[A-Z]:\`-style process whose mapped binary (lsof) lives in this bundle.
+
+## Migration note for existing installs
+
+The seeded live copy in `~/Library/Application Support/wine-game-wrapper/civ2/`
+runs, not the bundle master — it was patched in place on 2026-07-21 (backup:
+`civ2.exe.pre-icon-hide` next to the game dir). Fresh seeds inherit the patched
+master from the rebuilt bundle.
+
+## Invariants (still true, still must not break)
+
+- **CD check:** build stages markers into `Resources/cdrom`, labels the volume
+  `Civ2:MGE v1.0`, sets `d:=cdrom` in `[Software\Wine\Drives]` (prefix.go). The
+  launcher symlinks `dosdevices/d:` at runtime. Any build-time wine run without
+  the d: symlink can reclassify the drive and break the check. The icon patch
+  is pure Go specifically to avoid this.
+- **Save redirect:** game dir ships as pristine master in `Resources/game/`;
+  the external seeded copy is what actually runs.
 
 ---
 
-## Ready-to-use session prompt
+## Original problem statement (historical)
 
-> This project (~/Claude_Code/wine_project) packages classic Windows games into
-> self-contained macOS .app bundles that run under Wine. The maintained tool is the
-> Go/Wails app in wine-game-wrapper-gui/. Read PROJECT_JOURNAL.md, then this file
-> (TODO-civ2-polish.md) which has full context and the dead ends already hit, then
-> form your own view from the code. I want you to solve the two Civ2 (Win32) polish
-> problems described here — the Dock showing the game's ugly 16-colour icon instead
-> of ours, and the game window opening behind everything instead of coming to front.
-> Learn from what was already tried (rcedit is a dead end AND it broke the CD check;
-> LSUIElement true/false each has a downside). Do NOT break the CD check or the save
-> redirect — both invariants are documented here. Explore, propose an approach, and
-> agree it with me before large changes. These are visual bugs I can verify by
-> running the app and reporting what I see. Ask me anything that changes your approach.
+**1. The Dock icon.** When Civ2 launches, our nice icon shows briefly, then
+Wine's macOS driver replaces it with the game's own ugly 16-colour icon. The
+16-bit games don't have this — winemac can't read NE-format icon resources.
+
+**2. The window opens behind everything;** you must use Mission Control to
+surface it. (LSUIElement=true made the launcher an accessory app that can't
+activate its children; flipping it to false alone produced two Dock tiles.)
+
+**Dead ends hit by the first attempt:** rcedit --set-icon at build time (wrong
+exe — save-redirect; and running wine at build time with no d: symlink
+reclassified d: cdrom→floppy, breaking the CD check — fully reverted);
+LSUIElement flipping alone (two tiles ↔ no fronting).

@@ -92,6 +92,15 @@ func buildApp(appPath string, profile GameProfile, wineDir, prefixDir, embeddedR
 	os.Remove(filepath.Join(dosdevicesDir, "c:"))
 	os.Remove(filepath.Join(dosdevicesDir, "z:"))
 	os.Remove(filepath.Join(dosdevicesDir, "d:"))
+	// Strip X:: device links: they point at build-machine devices (wineboot
+	// records e.g. a mounted DMG as d::'s cdrom device) and let mountmgr
+	// rebind our static drives to real volumes at runtime, which rewrites
+	// the drive type in the registry and breaks CD checks.
+	if devLinks, err := filepath.Glob(filepath.Join(dosdevicesDir, "*::")); err == nil {
+		for _, l := range devLinks {
+			os.Remove(l)
+		}
+	}
 	os.Symlink("../drive_c", filepath.Join(dosdevicesDir, "c:"))
 	os.Symlink("/", filepath.Join(dosdevicesDir, "z:"))
 	if haveCDROM {

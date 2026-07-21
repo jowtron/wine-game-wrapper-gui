@@ -22,6 +22,12 @@ func initWinePrefix(wineBin, prefixDir string, profile GameProfile, r ProgressRe
 	cmd.Env = append(os.Environ(),
 		"WINEPREFIX="+prefixDir,
 		"WINEDEBUG=-all",
+		// Disable .NET support during init. The registry override below
+		// does the same permanently, but it lands only after wineboot —
+		// without this, a Wine build with no bundled wine-mono (e.g. a
+		// stripped one from an existing .app) pops an interactive Mono
+		// download dialog and hangs the headless build forever.
+		"WINEDLLOVERRIDES=mscoree=",
 	)
 	// Suppress verbose Wine/Vulkan output - only show our own log messages
 
