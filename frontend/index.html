@@ -28,11 +28,19 @@
                 <input type="text" id="custom-exe" placeholder="e.g. GAME.EXE">
             </div>
 
-            <div class="form-group">
+            <div class="form-group" id="cue-group">
                 <label for="cue-path">CUE File</label>
                 <div class="file-input">
                     <input type="text" id="cue-path" placeholder="Select a .cue file..." readonly>
                     <button id="btn-browse-cue" class="btn-secondary">Browse</button>
+                </div>
+            </div>
+
+            <div class="form-group" id="src-group" style="display: none;">
+                <label for="src-path">Game Folder</label>
+                <div class="file-input">
+                    <input type="text" id="src-path" placeholder="Select an existing install folder..." readonly>
+                    <button id="btn-browse-src" class="btn-secondary">Browse</button>
                 </div>
             </div>
 

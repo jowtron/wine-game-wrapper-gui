@@ -256,10 +256,11 @@ func CustomProfile(exe string) GameProfile {
 
 // ProfileInfo is a simplified profile struct for the frontend dropdown.
 type ProfileInfo struct {
-	Slug  string `json:"slug"`
-	Name  string `json:"name"`
-	Exe   string `json:"exe"`
-	Win16 bool   `json:"win16"`
+	Slug         string `json:"slug"`
+	Name         string `json:"name"`
+	Exe          string `json:"exe"`
+	Win16        bool   `json:"win16"`
+	FolderSource bool   `json:"folderSource"` // true = built from a folder (-src), not a CUE
 }
 
 // GetAllProfiles returns all loaded profiles for the frontend, derived from
@@ -269,7 +270,7 @@ func GetAllProfiles() []ProfileInfo {
 	infos := make([]ProfileInfo, 0, len(profileOrder))
 	for _, slug := range profileOrder {
 		p := profileRegistry[slug]
-		infos = append(infos, ProfileInfo{Slug: p.Slug, Name: p.Name, Exe: p.Exe, Win16: p.Win16})
+		infos = append(infos, ProfileInfo{Slug: p.Slug, Name: p.Name, Exe: p.Exe, Win16: p.Win16, FolderSource: p.isFolderSourced()})
 	}
 	return infos
 }

@@ -12,6 +12,7 @@ type BuildConfig struct {
 	GameSlug   string `json:"gameSlug"`
 	CustomExe  string `json:"customExe"`
 	CuePath    string `json:"cuePath"`
+	SourceDir  string `json:"sourceDir"` // Folder to package (install="copy-source-dir"); alternative to CuePath
 	OutputPath string `json:"outputPath"`
 	WinePath   string `json:"winePath"`
 	OtvdmPath  string `json:"otvdmPath"`
@@ -69,18 +70,35 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 		profile.Win16 = true
 	}
 
-	// Resolve CUE/BIN paths
-	absQue, err := filepath.Abs(config.CuePath)
-	if err != nil {
-		return fmt.Errorf("resolve CUE path: %w", err)
-	}
-	if _, err := os.Stat(absQue); err != nil {
-		return fmt.Errorf("CUE file not found: %s", absQue)
-	}
+	folderSource := profile.isFolderSourced()
 
-	binPath, err := resolveBINPath(absQue)
-	if err != nil {
-		return fmt.Errorf("resolve BIN file: %w", err)
+	// Resolve the build input: a CUE/BIN disc image, or — for copy-source-dir
+	// games (e.g. a DRM-free GOG install) — an existing folder to package.
+	var absQue, binPath, srcDir string
+	var err error
+	if folderSource {
+		if config.SourceDir == "" {
+			return fmt.Errorf("%s is built from a folder — a source directory is required (use -src)", profile.Name)
+		}
+		srcDir, err = filepath.Abs(config.SourceDir)
+		if err != nil {
+			return fmt.Errorf("resolve source folder: %w", err)
+		}
+		if info, statErr := os.Stat(srcDir); statErr != nil || !info.IsDir() {
+			return fmt.Errorf("source folder not found: %s", srcDir)
+		}
+	} else {
+		absQue, err = filepath.Abs(config.CuePath)
+		if err != nil {
+			return fmt.Errorf("resolve CUE path: %w", err)
+		}
+		if _, err := os.Stat(absQue); err != nil {
+			return fmt.Errorf("CUE file not found: %s", absQue)
+		}
+		binPath, err = resolveBINPath(absQue)
+		if err != nil {
+			return fmt.Errorf("resolve BIN file: %w", err)
+		}
 	}
 
 	// Extract embedded resources (mcicda.dll, otvdm, patches)
@@ -122,8 +140,12 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 	r.Logf("Game:     %s", profile.Name)
 	r.Logf("Exe:      %s", profile.Exe)
 	r.Logf("Win16:    %v", profile.Win16)
-	r.Logf("CUE:      %s", absQue)
-	r.Logf("BIN:      %s", binPath)
+	if folderSource {
+		r.Logf("Source:   %s", srcDir)
+	} else {
+		r.Logf("CUE:      %s", absQue)
+		r.Logf("BIN:      %s", binPath)
+	}
 	r.Logf("Output:   %s", appPath)
 	r.Log("")
 
@@ -148,14 +170,17 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 	wineBin := filepath.Join(wineDir, "bin", "wine")
 	r.Logf("  Wine: %s", wineDir)
 
-	// Step 2: Extract CUE/BIN
-	r.Step(2, 7, "Extracting CUE/BIN tracks...")
-	if err := extractTracks(binPath, absQue, tracksDir, r); err != nil {
-		return fmt.Errorf("extract tracks: %w", err)
-	}
-	isoPath, err := findDataTrackISO(tracksDir)
-	if err != nil {
-		return fmt.Errorf("find data track: %w", err)
+	// Step 2: Extract CUE/BIN tracks (disc-sourced games only)
+	var isoPath string
+	if !folderSource {
+		r.Step(2, 7, "Extracting CUE/BIN tracks...")
+		if err := extractTracks(binPath, absQue, tracksDir, r); err != nil {
+			return fmt.Errorf("extract tracks: %w", err)
+		}
+		isoPath, err = findDataTrackISO(tracksDir)
+		if err != nil {
+			return fmt.Errorf("find data track: %w", err)
+		}
 	}
 
 	// Step 3: Initialize Wine prefix (before game install: the run-installer
@@ -204,8 +229,14 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 	// Step 5: Install game files per the profile's install strategy,
 	// apply patches, and stage any retained CD content
 	r.Step(5, 7, fmt.Sprintf("Installing game (%s)...", profile.Install))
-	if err := installGameFromCD(isoPath, profile, wineBin, prefixDir, resourcesDir, cdromDir, r); err != nil {
-		return fmt.Errorf("install game: %w", err)
+	if folderSource {
+		if err := installGameFromSource(srcDir, profile, prefixDir, resourcesDir, r); err != nil {
+			return fmt.Errorf("install game: %w", err)
+		}
+	} else {
+		if err := installGameFromCD(isoPath, profile, wineBin, prefixDir, resourcesDir, cdromDir, r); err != nil {
+			return fmt.Errorf("install game: %w", err)
+		}
 	}
 
 	// Win32 exes carry PE icon resources that winemac.drv reads for the
@@ -224,36 +255,39 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 		}
 	}
 
-	// Step 6: Convert audio to FLAC and install into the prefix
-	r.Step(6, 7, "Converting audio tracks to FLAC...")
-	if err := os.MkdirAll(musicDir, 0755); err != nil {
-		return fmt.Errorf("create music dir: %w", err)
-	}
-	entries, err := os.ReadDir(tracksDir)
-	if err != nil {
-		return fmt.Errorf("read tracks dir: %w", err)
-	}
-	for _, e := range entries {
-		name := e.Name()
-		lower := strings.ToLower(name)
-		if strings.HasSuffix(lower, ".wav") && !strings.HasSuffix(lower, "track01.wav") {
-			src := filepath.Join(tracksDir, name)
-			dst := filepath.Join(musicDir, name)
-			if err := os.Rename(src, dst); err != nil {
-				if err := copyFile(src, dst); err != nil {
-					return fmt.Errorf("move %s: %w", name, err)
+	// Step 6: Convert CD audio to FLAC and install into the prefix.
+	// Folder-sourced games have no CD audio track, so this step is skipped.
+	if !folderSource {
+		r.Step(6, 7, "Converting audio tracks to FLAC...")
+		if err := os.MkdirAll(musicDir, 0755); err != nil {
+			return fmt.Errorf("create music dir: %w", err)
+		}
+		entries, err := os.ReadDir(tracksDir)
+		if err != nil {
+			return fmt.Errorf("read tracks dir: %w", err)
+		}
+		for _, e := range entries {
+			name := e.Name()
+			lower := strings.ToLower(name)
+			if strings.HasSuffix(lower, ".wav") && !strings.HasSuffix(lower, "track01.wav") {
+				src := filepath.Join(tracksDir, name)
+				dst := filepath.Join(musicDir, name)
+				if err := os.Rename(src, dst); err != nil {
+					if err := copyFile(src, dst); err != nil {
+						return fmt.Errorf("move %s: %w", name, err)
+					}
+					os.Remove(src)
 				}
-				os.Remove(src)
 			}
 		}
-	}
-	trackCount, err := convertToFLAC(musicDir, r)
-	if err != nil {
-		return fmt.Errorf("convert to FLAC: %w", err)
-	}
-	r.Logf("  Converted %d audio tracks", trackCount)
-	if err := installMusic(musicDir, prefixDir, r); err != nil {
-		return fmt.Errorf("install music: %w", err)
+		trackCount, err := convertToFLAC(musicDir, r)
+		if err != nil {
+			return fmt.Errorf("convert to FLAC: %w", err)
+		}
+		r.Logf("  Converted %d audio tracks", trackCount)
+		if err := installMusic(musicDir, prefixDir, r); err != nil {
+			return fmt.Errorf("install music: %w", err)
+		}
 	}
 
 	// Step 7: Assemble .app bundle

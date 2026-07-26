@@ -8,6 +8,10 @@
     const customExeGroup = document.getElementById("custom-exe-group");
     const customExeInput = document.getElementById("custom-exe");
     const cuePath = document.getElementById("cue-path");
+    const cueGroup = document.getElementById("cue-group");
+    const srcGroup = document.getElementById("src-group");
+    const srcPath = document.getElementById("src-path");
+    const btnBrowseSrc = document.getElementById("btn-browse-src");
     const outputPath = document.getElementById("output-path");
     const winePath = document.getElementById("wine-path");
     const otvdmPath = document.getElementById("otvdm-path");
@@ -73,6 +77,12 @@
                 win16Check.checked = profile.win16;
             }
 
+            // Folder-sourced games (e.g. a GOG install) are built from a
+            // directory, not a CUE — swap the picker accordingly.
+            var folderSource = profile && profile.folderSource;
+            cueGroup.style.display = folderSource ? "none" : "block";
+            srcGroup.style.display = folderSource ? "block" : "none";
+
             updateBuildButton();
         });
 
@@ -85,6 +95,19 @@
                 if (path) {
                     cuePath.value = path;
                     appendLog("Selected CUE: " + path);
+                    updateBuildButton();
+                }
+            } catch (e) {
+                appendLog("File dialog error: " + e, "error");
+            }
+        });
+
+        btnBrowseSrc.addEventListener("click", async function () {
+            try {
+                var path = await window['go']['main']['App']['SelectDirectory']("Select Game Folder");
+                if (path) {
+                    srcPath.value = path;
+                    appendLog("Selected folder: " + path);
                     updateBuildButton();
                 }
             } catch (e) {
@@ -195,10 +218,17 @@
         });
     }
 
+    function currentProfile() {
+        return profiles.find(function (p) { return p.slug === gameSelect.value; });
+    }
+
     function updateBuildButton() {
         var gameOk = gameSelect.value && (gameSelect.value !== "custom" || customExeInput.value.trim());
-        var cueOk = cuePath.value.trim() !== "";
-        btnBuild.disabled = !(gameOk && cueOk);
+        var profile = currentProfile();
+        var inputOk = (profile && profile.folderSource)
+            ? srcPath.value.trim() !== ""
+            : cuePath.value.trim() !== "";
+        btnBuild.disabled = !(gameOk && inputOk);
     }
 
     async function startBuild() {
@@ -206,6 +236,7 @@
             gameSlug: gameSelect.value === "custom" ? "" : gameSelect.value,
             customExe: customExeInput.value.trim(),
             cuePath: cuePath.value.trim(),
+            sourceDir: srcPath.value.trim(),
             outputPath: outputPath.value.trim(),
             winePath: winePath.value.trim(),
             otvdmPath: otvdmPath.value.trim(),
@@ -225,7 +256,11 @@
 
         appendLog("Starting build...", "step");
         appendLog("Game: " + (config.gameSlug || "Custom (" + config.customExe + ")"));
-        appendLog("CUE:  " + config.cuePath);
+        if (config.sourceDir && (currentProfile() && currentProfile().folderSource)) {
+            appendLog("Folder: " + config.sourceDir);
+        } else {
+            appendLog("CUE:  " + config.cuePath);
+        }
         if (config.outputPath) {
             appendLog("Output: " + config.outputPath);
         }

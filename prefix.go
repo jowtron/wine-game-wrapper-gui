@@ -52,7 +52,14 @@ func initWinePrefix(wineBin, prefixDir string, profile GameProfile, r ProgressRe
 			reg.WriteString("\"Version\"=\"win95\"\n")
 		}
 		// Enable Wine virtual desktop so the game runs in a managed window
-		// with macOS title bar (close/minimize/fullscreen buttons)
+		// with macOS title bar (close/minimize/fullscreen buttons). TWO keys
+		// are required: Explorer\Desktops\Default sets the desktop SIZE, and
+		// Explorer\Desktop="Default" ACTIVATES it. Without the activator no
+		// virtual desktop runs and the app hits the raw (Retina) display —
+		// games that do a fullscreen ChangeDisplaySettings then get
+		// DISP_CHANGE_BADMODE and crash (observed with Civ2 ToT and SMAC).
+		reg.WriteString("\n[HKEY_CURRENT_USER\\Software\\Wine\\Explorer]\n")
+		reg.WriteString("\"Desktop\"=\"Default\"\n")
 		reg.WriteString("\n[HKEY_CURRENT_USER\\Software\\Wine\\Explorer\\Desktops]\n")
 		reg.WriteString(fmt.Sprintf("\"Default\"=\"%s\"\n", profile.Desktop))
 		if len(profile.RetainCD) > 0 {

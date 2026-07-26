@@ -14,6 +14,8 @@ import (
 //	copy-dir:<path>           copy one directory from the CD
 //	extract-installshield     extract data1.cab with unshield (optionally :<dir> on CD)
 //	run-installer:<path>      run the CD's installer under Wine (interactive)
+//	copy-source-dir           package an existing install folder (no CD); the
+//	                          folder comes from BuildConfig.SourceDir, not a CUE
 type installStrategy struct {
 	Kind string
 	Arg  string
@@ -24,6 +26,14 @@ var validStrategies = map[string]bool{
 	"copy-dir":              true,
 	"extract-installshield": true,
 	"run-installer":         true,
+	"copy-source-dir":       true,
+}
+
+// isFolderSourced reports whether a profile is built from a provided folder
+// (BuildConfig.SourceDir) rather than a CUE/BIN disc image.
+func (p GameProfile) isFolderSourced() bool {
+	kind, _, _ := strings.Cut(p.Install, ":")
+	return kind == "copy-source-dir"
 }
 
 // parseInstallStrategy parses an install string like "copy-dir:INSTALL".
@@ -118,6 +128,41 @@ func installGameFromCD(isoPath string, profile GameProfile, wineBin, prefixDir, 
 		}
 	}
 
+	return nil
+}
+
+// installGameFromSource packages an existing install folder
+// (BuildConfig.SourceDir) into the prefix's game dir — used by copy-source-dir
+// games that have no disc to install from (e.g. a DRM-free GOG install). It
+// copies the folder wholesale, applies declarative patches, and verifies the
+// exe. There is no CD, so retain_cd / cd_label do not apply. Parameters mirror
+// installGameFromCD so the pipeline treats the two symmetrically.
+func installGameFromSource(sourceDir string, profile GameProfile, prefixDir, resourcesDir string, r ProgressReporter) error {
+	info, err := os.Stat(sourceDir)
+	if err != nil || !info.IsDir() {
+		return fmt.Errorf("source folder not found: %s", sourceDir)
+	}
+
+	gameDest := filepath.Join(prefixDir, "drive_c", profile.GameDir)
+	r.Logf("  Copying game files from %s...", sourceDir)
+	if err := copyTree(sourceDir, gameDest); err != nil {
+		return fmt.Errorf("copy game files: %w", err)
+	}
+
+	// Expand any ARCV-compressed files (harmless no-op for already-expanded installs)
+	if err := expandARCVFiles(gameDest, r); err != nil {
+		return fmt.Errorf("expand ARCV archives: %w", err)
+	}
+
+	// Sanity check: the game exe must exist after copy
+	if findCaseInsensitive(gameDest, profile.Exe) == "" {
+		return fmt.Errorf("%s not found in %s after copy — check the profile's exe and the source folder", profile.Exe, gameDest)
+	}
+
+	// Apply declarative patches (e.g. overlay the DRM-free exe, hex fixes)
+	if err := applyGamePatches(gameDest, findPatchesDir(resourcesDir), profile, r); err != nil {
+		return fmt.Errorf("apply patches: %w", err)
+	}
 	return nil
 }
 

@@ -1,0 +1,38 @@
+# Civilization II: Test of Time (1999) — Win32, InstallShield 5 CD.
+# Same MicroProse engine generation and CD layout as Civ2 MGE: the game
+# files (civ2.exe + cv/mk/pv/ss/Intro/Tiles/… DLLs + scenario data) are all
+# inside data1.cab, so we extract with unshield (brew install unshield) and
+# never run the interactive installer. The disc's Civ2/Video/*.avi are read
+# from the CD at runtime; they are Intel Indeo 5 (IV50) which Wine can't
+# decode, so — exactly as for MGE — the Video dir is NOT retained and the
+# game skips movies and plays fine. See TODO-civ2-movies.md.
+name = "Civilization II: Test of Time"
+slug = "civ2tot"
+exe = "civ2.exe"
+win16 = false
+game_dir = "ToT"
+theme = "auto"  # follow the macOS light/dark appearance for menus/dialogs/chrome
+install = "extract-installshield"
+# Run in a virtual desktop sized to a standard mode so a fullscreen
+# ChangeDisplaySettings succeeds (on the raw Retina display it returns BADMODE
+# and civ2.exe crashes). See virtual-desktop-activator note.
+desktop = "1024x768"
+# CD-check markers only (same MicroProse scheme as MGE). The label must match
+# the real disc exactly (the game scans CD-ROM drives for it) and a few small
+# root files stand in as the disc. Retaining Civ2/civ2.exe (not Video/) keeps
+# the check happy without shipping the unplayable Indeo movies.
+retain_cd = [
+  "Civ2/civ2.exe",
+  "DATA.TAG",
+  "lang.dat",
+  "os.dat",
+  "layout.bin",
+]
+cd_label = "TEST OF TIME V1.0"
+
+# NO keymap: unlike Civ2 MGE, ToT's civ2.exe crashes when the keyremap global
+# hook (keyhook.exe/keyremap.dll) injects into it (verified: access violation at
+# 0059DFBA with the hook active, runs without it). Left disabled until the hook
+# is made safe for this binary. (ToT also has a deeper DirectDraw rendering issue
+# on winemac — see virtual-desktop-activator note — so the keymap is moot until
+# that's solved.)

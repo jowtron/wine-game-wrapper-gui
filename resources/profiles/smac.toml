@@ -1,0 +1,32 @@
+# Sid Meier's Alpha Centauri — Planetary Pack (SMAC + Alien Crossfire), Win32.
+#
+# The retail disc is SafeDisc-protected (terran.exe/terranx.exe are loader
+# stubs; the game is in encrypted .icd files) and secdrv.sys can't load under
+# Wine, so the disc exe cannot run. This profile instead REPACKAGES an
+# existing DRM-free install folder (install = "copy-source-dir"): point the
+# build at a complete install — e.g. a GOG "Alpha Centauri" directory — via
+# -src (CLI) or the GUI's folder picker. That folder already carries the
+# officially de-protected terranx.exe plus all data, movies, voices and fx.
+#
+# No CD is involved, so there is no retain_cd / cd_label and no CD audio
+# (the disc has none — a single data track). SMAC reads everything relative
+# to its own directory, so no registry seeding is needed.
+#
+# terranx.exe launches Alien Crossfire (the Planetary Pack superset). For
+# vanilla SMAC without the expansion, change exe to terran.exe.
+name = "Sid Meier's Alpha Centauri"
+slug = "smac"
+exe = "terranx.exe"
+win16 = false
+game_dir = "AlphaCentauri"
+theme = "auto"  # follow the macOS light/dark appearance for menus/dialogs/chrome
+install = "copy-source-dir"
+# SMAC's DirectDraw primary surface must match the Wine virtual-desktop size or
+# the surface is lost and the screen renders white (modern Wine has no gdi ddraw
+# renderer to blit a mismatch). 1024x768 is the largest standard mode SMAC sizes
+# its surface to; at 1920x1080 it falls back to a 640x480 surface and mismatches.
+desktop = "1024x768"
+
+# No keymap: SMAC binds unit orders to letter keys (u/o/j/k/l etc.), so the
+# Civ-style 789/uo/jkl -> numpad remap would clobber real hotkeys. SMAC already
+# supports numpad unit movement natively.

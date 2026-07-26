@@ -46,7 +46,8 @@ func runHeadless(args []string) int {
 	fs := flag.NewFlagSet("build", flag.ExitOnError)
 	game := fs.String("game", "", "game profile slug (see -list), or empty with -exe for a custom game")
 	exe := fs.String("exe", "", "custom game exe name (when no profile matches)")
-	cue := fs.String("cue", "", "path to the CUE file")
+	cue := fs.String("cue", "", "path to the CUE file (disc-sourced games)")
+	src := fs.String("src", "", "path to an existing install folder (copy-source-dir games, e.g. GOG installs)")
 	out := fs.String("o", "", "output .app path (default /Applications/<Name>.app)")
 	wine := fs.String("wine", "", "path to a local Wine installation (default: download)")
 	otvdm := fs.String("otvdm", "", "path to an otvdm directory (default: embedded)")
@@ -70,8 +71,8 @@ func runHeadless(args []string) int {
 		return 0
 	}
 
-	if *cue == "" {
-		fmt.Fprintln(os.Stderr, "error: -cue is required")
+	if *cue == "" && *src == "" {
+		fmt.Fprintln(os.Stderr, "error: -cue (disc image) or -src (install folder) is required")
 		fs.Usage()
 		return 2
 	}
@@ -85,6 +86,7 @@ func runHeadless(args []string) int {
 		GameSlug:   *game,
 		CustomExe:  *exe,
 		CuePath:    *cue,
+		SourceDir:  *src,
 		OutputPath: *out,
 		WinePath:   *wine,
 		OtvdmPath:  *otvdm,
