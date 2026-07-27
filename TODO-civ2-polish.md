@@ -87,8 +87,10 @@ wine-game-wrapper/civ2/`: `civ2.exe.pre-icon-hide`, `system.reg.backup-2026-07-2
 for the first time ever — the game only enables CD audio when it finds its CD
 in a CD-ROM-typed drive, which the mountmgr stealing had been silently breaking
 on every run. New build swapped into /Applications. Window-fronting on the new
-build not yet re-confirmed (the "doesn't front" report was against the old
-architecture, which cannot front).
+build **user-confirmed working 2026-07-21** ("fronting works on your new civ2
+build, yay!") — the earlier "doesn't front" report was against the old
+architecture, which cannot front. All three polish items (icon, fronting, CD
+music) are now confirmed on the live /Applications/Civ2.app.
 
 Also fixed on the way: **process leak on quit** — Wine-spawned services
 (`explorer.exe /desktop`, winedevice.exe...) show only `C:\` paths in ps and

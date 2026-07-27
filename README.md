@@ -59,6 +59,7 @@ to = "num7"
 | `copy-dir:<path>` | Copy one directory from the CD |
 | `extract-installshield` | Extract `data1.cab` with unshield (`:<dir>` if not at CD root) |
 | `run-installer:<path>` | Run the CD's installer under Wine — interactive, the CD is visible as `d:` |
+| `copy-source-dir` | Package an existing install **folder** (no CD/CUE) — pass it via `-src <folder>` (CLI) or the GUI folder picker. For games whose disc is unusable (e.g. SafeDisc) but you own a DRM-free install such as a GOG copy. Skips track extraction + CD audio. |
 
 `retain_cd` bundles CD directories into the .app (`Resources/cdrom`) and maps them as a `d:` CD-ROM drive (registry `Type=cdrom` + volume label), for games that pass CD checks or stream videos/music from the CD at runtime.
 
@@ -71,7 +72,8 @@ wails build    # production .app in build/bin/
 ```
 
 1. Select a game profile from the dropdown (or "Custom" and enter an exe name)
-2. Browse to your `.cue` file
+2. Browse to your `.cue` file — or, for a `copy-source-dir` profile, the picker
+   becomes a **Game Folder** picker instead
 3. Optionally set output path / advanced options
 4. Build, watch the log
 
@@ -82,7 +84,11 @@ wine-game-wrapper-gui build -list                       # show available profile
 wine-game-wrapper-gui build -game civnet -cue CIVNET.cue
 wine-game-wrapper-gui build -game civnet -cue CIVNET.cue -o /tmp/CivNet.app -overwrite
 wine-game-wrapper-gui build -exe GAME.EXE -win16 -cue game.cue   # custom game
+wine-game-wrapper-gui build -game smac -src "/path/to/GOG install folder"   # copy-source-dir (no CUE)
 ```
+
+Either `-cue` (disc image) or `-src` (existing install folder, for
+`copy-source-dir` profiles) is required.
 
 ## Project structure
 
