@@ -1,155 +1,205 @@
-# wine-game-wrapper-gui
+# Wine Game Wrapper
 
-Build self-contained macOS `.app` bundles from CUE/BIN CD images of classic Windows games. The resulting `.app` includes Wine, a configured prefix, game files, and CD audio — everything needed to double-click and play.
+Turn a classic Windows CD game into a **self-contained macOS `.app` you
+double-click to play** — Wine, a configured prefix, your game files, and the
+original **CD soundtrack** all baked into one bundle. No Homebrew Wine, no
+`winecfg`, no terminal. Built and tested on Apple Silicon.
 
-Native macOS GUI built with [Wails v2](https://wails.io/) (Go backend + vanilla HTML/CSS/JS frontend), plus a headless `build` subcommand for scripting.
+It began as a way to play *Sid Meier's Civilization II* on a modern Mac and grew
+into a small pipeline that handles the awkward parts of shipping a 1990s Windows
+game as a native-feeling Mac app: splitting CUE/BIN discs, ripping and replaying
+Red Book **CD audio**, remapping the keyboard so **numpad-only controls work on
+a laptop**, passing CD checks, theming the Windows chrome to match macOS, and
+keeping your saves when you rebuild.
 
-## Prerequisites
+The GUI is [Wails v2](https://wails.io/) (Go backend, vanilla HTML/CSS/JS), with
+a headless `build` subcommand for scripting.
 
-None for most games — CUE/BIN splitting and FLAC encoding are pure Go, and `hdiutil`/`cp` ship with macOS.
+---
 
-- Games that use an InstallShield 5 CD (e.g. Civ2 Multiplayer Gold): `brew install unshield`
-- Building the app itself: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+## What you get in each app
 
-## Game profiles
+- **One double-click bundle.** Wine, the prefix, and the game all live inside
+  the `.app`. Copy it to another Mac and it just runs.
+- **The real CD soundtrack.** The music from the original disc plays in-game —
+  see [CD audio](#cd-audio) below.
+- **A keyboard remapper.** Play numpad-driven games (unit movement in Civ-style
+  games) on a laptop with no numpad — see [Keyboard remapper](#keyboard-remapper).
+- **Light/dark Windows theming** that follows the macOS appearance.
+- **Saves that survive rebuilds** (stored outside the bundle).
 
-Games are described by declarative TOML profiles — no code changes needed to add a game. Builtins live in `resources/profiles/*.toml`; drop additional profiles into:
+## Games with built-in profiles
 
+You supply the game (see [Bring your own game files](#bring-your-own-game-files)).
+
+| Game | Type | Notes |
+|---|---|---|
+| Civilization II — Multiplayer Gold | Win32 | CD music, CD-check, movies dropped (Indeo) |
+| Civilization II — Test of Time | Win32 | v1.1 + [TOTPP] auto-applied; CD music; runs at high resolution |
+| Sid Meier's CivNet | Win16 (otvdm) | CD music; official 1.0.2 patch fetched at build time |
+| Sid Meier's Colonization | Win16 (otvdm) | CD music |
+| Sid Meier's Alpha Centauri | Win32 | Renders via bundled [cnc-ddraw]; built from a DRM-free (e.g. GOG) install |
+
+Adding another game is usually just a [TOML profile](#adding-a-game) — no code.
+
+[TOTPP]: https://forums.civfanatics.com/threads/the-test-of-time-patch-project.517282/
+[cnc-ddraw]: https://github.com/FunkyFr3sh/cnc-ddraw
+
+---
+
+## Bring your own game files
+
+This is a **build tool, not a game distributor.** It never ships game
+executables, data, or music. You point it at a disc image (`.cue`/`.bin`) or an
+install folder you already own, and it builds an app around it. Copyrighted
+patches that can't be bundled (e.g. the CivNet 1.0.2 patch) are resolved from a
+copy you supply or downloaded at build time — see
+[`resources/patches/README.md`](resources/patches/README.md).
+
+---
+
+## Quick start
+
+Install [Wails](https://wails.io/) and (for InstallShield-based discs like Civ2)
+`unshield`:
+
+```bash
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+brew install unshield          # only for extract-installshield games
 ```
-~/Library/Application Support/wine-game-wrapper/profiles/
+
+### GUI
+
+```bash
+./build.sh gui                 # -> build/bin/Wine Game Wrapper.app
 ```
 
-A profile:
+1. Pick a game profile (or "Custom" + an exe name).
+2. Browse to your `.cue` — or, for folder-based games, a **Game Folder**.
+3. Build, watch the log. The finished app lands in `/Applications`.
+
+### Headless / scripting
+
+```bash
+wine-game-wrapper-gui build -list
+wine-game-wrapper-gui build -game civ2    -cue Civ2.cue
+wine-game-wrapper-gui build -game smac    -src "/path/to/GOG/Alpha Centauri"
+wine-game-wrapper-gui build -game civnet  -cue CIVNET.cue -o /tmp/CivNet.app -overwrite
+```
+
+`build.sh` also rebuilds the bundled games from prepared masters — see it and
+`TODO-civ2tot.md` for the reproducible-build setup.
+
+---
+
+## CD audio
+
+Many of these games play their soundtrack as **Red Book CD audio** — real audio
+tracks on the disc, not files the game reads. On original hardware the game asks
+the OS to play "track 3" and the CD drive does it. That doesn't work from a disc
+*image* on macOS, so the music normally just… doesn't play.
+
+This project fixes it with a small **drop-in `mcicda.dll`** (built from source in
+[`mcicda/`](mcicda), links libogg + libopus). At build time the pipeline:
+
+1. Splits your `.cue`/`.bin` into the data track + the audio tracks (pure Go).
+2. Encodes the audio tracks to FLAC (pure Go, parallel).
+3. Installs them as `C:\music\trackNN.flac` in the prefix.
+
+At runtime `mcicda.dll` intercepts the game's MCI `cdaudio` commands and plays
+the matching track through Wine's audio (CoreAudio). Track numbering matches the
+original disc (track 1 is the data track, so music starts at `track02`). The DLL
+also accepts `.wav/.mp3/.ogg/.opus`.
+
+Result: the original soundtrack plays in-game, straight from the app, with no CD
+in the drive. Four of the five built-in games use it (Alpha Centauri's disc has
+no CD audio).
+
+---
+
+## Keyboard remapper
+
+Civ-style games move units with the **numpad** (diagonals on 7/9/1/3). Laptops
+don't have a numpad, so those moves are impossible without a workaround.
+
+The remapper (`keyhook.exe` + `keyremap.dll`, built from source in
+[`keyremap/`](keyremap)) installs a global Windows keyboard hook that rewrites
+keystrokes *inside* the game. A profile declares the mapping by key name:
+
+```toml
+[[keymap]]
+from = "7"    # letters, digits, num0-num9
+to   = "num7"
+[[keymap]]
+from = "u"
+to   = "num4"
+```
+
+The built-in games map `7 8 9 / u o / j k l` to the numpad cluster, so the
+right-hand keys drive units in all eight directions — no numpad required. Each
+key resolves to its scancode + virtual-key pair, written to `keyremap.ini`, and
+the hook is started automatically at launch. Leave `keymap` out and no hook runs.
+
+---
+
+## How a build works
+
+1. **Wine** — cached download of a Gcenx `wine-stable` build (or a local path).
+2. **Disc** — split CUE/BIN into a data ISO + WAV audio tracks (pure Go). Or,
+   for folder-based games, use the install folder directly.
+3. **Prefix** — `wineboot`, a virtual desktop, drive mappings, Windows version.
+4. **Components** — `mcicda.dll`, otvdm (Win16), the keyremap hook.
+5. **Game** — install per the profile's strategy; apply overlay/hex patches.
+6. **CD audio** — install FLAC tracks into `C:\music` (see [above](#cd-audio)).
+7. **Bundle** — assemble the `.app`: Wine + prefix + launcher + icon.
+
+## Adding a game
+
+Games are declarative TOML — drop a profile into
+`~/Library/Application Support/wine-game-wrapper/profiles/`, no rebuild needed:
 
 ```toml
 name = "CivNet"
-exe = "CIVNET.EXE"
-win16 = true                     # needs otvdm (Win16 compatibility layer)
-game_dir = "CivNet"              # directory under C:\
-install = "copy-cd-root"         # how files get from the CD into the prefix
-desktop = "1920x1080"            # Wine virtual desktop size
-theme = "auto"                   # Windows UI theme: light | dark | auto (follows macOS)
-retain_cd = ["Civ2/VIDEO"]       # CD paths to bundle and map as drive d:
-cd_label = "Civ2:MGE v1.0"       # volume label for emulated d: — MUST match the real disc
-                                 #   (game scans CD drives for it; read it from the ISO PVD)
+exe  = "CIVNET.EXE"
+win16 = true                    # run under otvdm (Win16 layer)
+game_dir = "CivNet"
+install = "copy-cd-root"        # copy-cd-root | copy-dir:<p> | extract-installshield |
+                                #   run-installer:<p> | copy-source-dir
+desktop = "1920x1080"
+theme = "auto"                  # light | dark | auto
+retain_cd = ["Civ2/VIDEO"]      # CD paths to bundle + map as drive d:
+cd_label = "Civ2:MGE v1.0"      # MUST match the real disc label (read from the ISO PVD)
+dll_overrides = "ddraw=n,b"     # extra WINEDLLOVERRIDES (e.g. load bundled cnc-ddraw)
 
-[[overlay]]                      # copy a patch file set over the game dir
-source = "civnet"                # -> resources/patches/civnet/
-skip = ["patch.txt"]
+[[overlay]]                     # copy a patch file set over the game dir
+source = "civnet"               # embedded, or build-inputs/patches/civnet, or downloaded
 
-[[hexpatch]]                     # verified in-place byte patch
+[[hexpatch]]                    # verified in-place byte patch
 file = "civnet.exe"
-desc = "widescreen fix"
-expect_size = 2073600            # exact size guard (0 = skip check)
+expect_size = 2073600
 offset = 0x147cff
-expect = [0x18, 0x04, 0x68, 0x14, 0x05]
+expect  = [0x18, 0x04, 0x68, 0x14, 0x05]
 replace = [0x00, 0x7d, 0x68, 0x00, 0x7d]
-optional = true                  # warn-and-continue instead of failing
+optional = true
 
-[[keymap]]                       # keyboard remapping by key name
-from = "7"                       # letters, digits, num0-num9
-to = "num7"
+[[keymap]]
+from = "7"
+to   = "num7"
 ```
 
-### Install strategies
-
-| `install =` | Behavior |
-|---|---|
-| `copy-cd-root` | Copy the whole data track into `C:\<game_dir>` (run-from-CD games) |
-| `copy-dir:<path>` | Copy one directory from the CD |
-| `extract-installshield` | Extract `data1.cab` with unshield (`:<dir>` if not at CD root) |
-| `run-installer:<path>` | Run the CD's installer under Wine — interactive, the CD is visible as `d:` |
-| `copy-source-dir` | Package an existing install **folder** (no CD/CUE) — pass it via `-src <folder>` (CLI) or the GUI folder picker. For games whose disc is unusable (e.g. SafeDisc) but you own a DRM-free install such as a GOG copy. Skips track extraction + CD audio. |
-
-`retain_cd` bundles CD directories into the .app (`Resources/cdrom`) and maps them as a `d:` CD-ROM drive (registry `Type=cdrom` + volume label), for games that pass CD checks or stream videos/music from the CD at runtime.
-
-## GUI usage
+## Building from source
 
 ```bash
-wails dev      # development with hot reload
-wails build    # production .app in build/bin/
-./build-app.command   # universal (arm64 + amd64) build
+./build.sh gui        # GUI app (wails build) -> build/bin/
+./build.sh games      # rebuild the bundled game apps from masters
+./build.sh all        # both (default)
+wails dev             # GUI with hot reload
 ```
 
-1. Select a game profile from the dropdown (or "Custom" and enter an exe name)
-2. Browse to your `.cue` file — or, for a `copy-source-dir` profile, the picker
-   becomes a **Game Folder** picker instead
-3. Optionally set output path / advanced options
-4. Build, watch the log
+## License
 
-## Headless usage
-
-```bash
-wine-game-wrapper-gui build -list                       # show available profiles
-wine-game-wrapper-gui build -game civnet -cue CIVNET.cue
-wine-game-wrapper-gui build -game civnet -cue CIVNET.cue -o /tmp/CivNet.app -overwrite
-wine-game-wrapper-gui build -exe GAME.EXE -win16 -cue game.cue   # custom game
-wine-game-wrapper-gui build -game smac -src "/path/to/GOG install folder"   # copy-source-dir (no CUE)
-```
-
-Either `-cue` (disc image) or `-src` (existing install folder, for
-`copy-source-dir` profiles) is required.
-
-## Project structure
-
-```
-wine-game-wrapper-gui/
-  main.go              # Wails entry point + headless `build` subcommand
-  app.go               # Bound methods for the frontend (dialogs, build trigger)
-  pipeline.go          # 7-step build orchestrator
-  profiles.go          # TOML profile loading, key table, registry
-  install.go           # Install strategies + retained-CD staging
-  patches.go           # Declarative overlay + hex patch application
-  progress.go          # ProgressReporter: Wails events / stdout
-  cuebin.go            # Pure-Go CUE/BIN track splitting
-  flac_encode.go       # Pure-Go WAV->FLAC (parallel)
-  extractor.go         # CUE parsing, data track discovery
-  wine_download.go     # Wine auto-detection + download (Gcenx builds)
-  prefix.go            # Wine prefix setup + component installation
-  builder.go           # .app bundle assembly
-  launcher.go          # Launcher script + Info.plist generation
-  resources/
-    profiles/          # Builtin game profiles (TOML)
-    patches/           # Patch file sets referenced by profiles
-    otvdm/             # Win16 compatibility layer (otya128/winevdm v0.9.0)
-    mcicda.dll         # CD-audio DLL (github.com/jowtron/mcicda-stub)
-    keyremap/          # keyhook.exe + keyremap.dll
-    icons/             # Per-game .icns
-  frontend/            # Single-page UI (vanilla JS, Catppuccin Mocha)
-```
-
-## Pipeline
-
-1. Obtain Wine (cached download of Gcenx wine-stable, or local path)
-2. Split CUE/BIN into data ISO + WAV audio tracks (pure Go)
-3. Initialize the Wine prefix (win95 version for Win16, virtual desktop, drives)
-4. Install components (mcicda.dll into system32+syswow64, otvdm, keyremap)
-5. Install the game per the profile's install strategy; apply patches; stage retained CD content
-6. Convert audio to FLAC (parallel, pure Go) into `C:\music`
-7. Assemble the .app (Wine + prefix + launcher + icon + cdrom)
-
-## Notes
-
-### CPU usage with Win16 games
-
-Win16 games often use a busy-wait message loop (`PeekMessage` in a tight loop), which can consume 100%+ CPU under Wine/otvdm. Two mitigations are applied:
-
-- **`PeekMessageSleep=1`** (in `otvdm.ini`): Adds a 1ms sleep per `PeekMessage16` call inside otvdm. This is the effective fix — it dramatically reduces CPU usage with no noticeable impact on game responsiveness. The ini file is generated automatically during the build when Win16/otvdm is enabled.
-
-- **`nice -n 19`** (in the launcher script): Lowers the game's scheduling priority to the minimum. This doesn't reduce actual CPU usage but prevents the game from starving other processes.
-
-### CD audio
-
-`mcicda.dll` intercepts MCI cdaudio commands and plays `C:\music\trackNN.{flac,wav,mp3,ogg,opus}` through Wine's waveOut (CoreAudio). Track numbering matches the original CD layout (track 1 = data track, so audio starts at track 2).
-
-### Saves live outside the bundle
-
-The game directory ships as a pristine master at `Resources/game/<GameDir>`. On first launch the launcher copies it to `~/Library/Application Support/wine-game-wrapper/<slug>/<GameDir>` and symlinks that into the prefix's `drive_c`, so saves/preferences survive rebuilding or replacing the `.app`. **Consequence:** the *running* game files are the external copy — once seeded, changing game files inside the bundle (e.g. editing the exe) does **not** reach an existing install.
-
-### Windows UI theme
-
-The `theme` profile field (`light`/`dark`/`auto`) themes the Windows chrome (menus, dialogs, buttons, title bar) via `HKCU\Control Panel\Colors`, **not** the game's own bitmap canvas. `auto` ships both palettes and the launcher applies the one matching macOS's appearance at startup. Static `dark`/`light` is baked into the prefix at build time.
-
-### Win16 vs Win32 differences
-
-Win16 games (CivNet, Colonization) run inside the otvdm host; Win32 games (Civ2) run directly under Wine. This matters for the Dock: Wine's Mac driver can't read Win16 (NE) icon resources, so those keep the icon set on the Wine binary — but a Win32 game's PE icon **is** read and overrides ours, showing the game's own (often 16-colour) icon. Win32 game windows also tend to open behind and not grab focus. Both are open problems — see `TODO-civ2-polish.md`.
+This project's own code is **MIT** (see [`LICENSE`](LICENSE)). It bundles or
+downloads third-party components under their own licenses — Wine and winevdm
+(LGPL-2.1), libogg/libopus (BSD), cnc-ddraw (GPL) — see
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md). Game data is never included
+and is yours to supply.
