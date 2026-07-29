@@ -255,8 +255,10 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 		}
 	}
 
-	// Step 6: Convert CD audio to FLAC and install into the prefix.
-	// Folder-sourced games have no CD audio track, so this step is skipped.
+	// Step 6: Install CD audio into the prefix (C:\music, played by mcicda).
+	// Disc-sourced games rip their tracks and convert to FLAC; folder-sourced
+	// games install pre-ripped FLAC shipped in a `music/` dir beside the source
+	// folder (SMAC has none; ToT ships its 13 tracks — see below).
 	if !folderSource {
 		r.Step(6, 7, "Converting audio tracks to FLAC...")
 		if err := os.MkdirAll(musicDir, 0755); err != nil {
@@ -287,6 +289,17 @@ func runPipeline(config BuildConfig, r ProgressReporter) error {
 		r.Logf("  Converted %d audio tracks", trackCount)
 		if err := installMusic(musicDir, prefixDir, r); err != nil {
 			return fmt.Errorf("install music: %w", err)
+		}
+	} else {
+		// Pre-ripped CD audio for a folder-sourced game: FLAC tracks in a
+		// `music/` dir beside the source folder (rip once from the game's CD).
+		// Keeps CD music reproducible without needing the disc at build time.
+		preRipped := filepath.Join(filepath.Dir(srcDir), "music")
+		if entries, err := os.ReadDir(preRipped); err == nil && len(entries) > 0 {
+			r.Step(6, 7, "Installing CD audio (pre-ripped FLAC)...")
+			if err := installMusic(preRipped, prefixDir, r); err != nil {
+				return fmt.Errorf("install music: %w", err)
+			}
 		}
 	}
 

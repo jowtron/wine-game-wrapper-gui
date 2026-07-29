@@ -29,6 +29,12 @@ type GameProfile struct {
 	RetainCD []string `toml:"retain_cd"` // CD paths to bundle and map as drive d:
 	CDLabel  string   `toml:"cd_label"`  // Volume label for the emulated d: drive
 
+	// DLLOverrides appends game-specific entries to the launcher's
+	// WINEDLLOVERRIDES (semicolon-separated, e.g. "ddraw=n,b" to load a
+	// bundled cnc-ddraw wrapper). The base overrides (mcicda, keyremap,
+	// mscoree/mshtml) are always present; this adds to them.
+	DLLOverrides string `toml:"dll_overrides"`
+
 	Overlays   []OverlayPatch `toml:"overlay"`  // File-copy patch sets
 	HexPatches []HexPatch     `toml:"hexpatch"` // In-place byte patches
 	Keymap     []KeymapEntry  `toml:"keymap"`   // Keyboard remappings by key name

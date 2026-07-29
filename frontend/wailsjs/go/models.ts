@@ -4,6 +4,7 @@ export namespace main {
 	    gameSlug: string;
 	    customExe: string;
 	    cuePath: string;
+	    sourceDir: string;
 	    outputPath: string;
 	    winePath: string;
 	    otvdmPath: string;
@@ -19,6 +20,7 @@ export namespace main {
 	        this.gameSlug = source["gameSlug"];
 	        this.customExe = source["customExe"];
 	        this.cuePath = source["cuePath"];
+	        this.sourceDir = source["sourceDir"];
 	        this.outputPath = source["outputPath"];
 	        this.winePath = source["winePath"];
 	        this.otvdmPath = source["otvdmPath"];
@@ -31,6 +33,7 @@ export namespace main {
 	    name: string;
 	    exe: string;
 	    win16: boolean;
+	    folderSource: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ProfileInfo(source);
@@ -42,6 +45,7 @@ export namespace main {
 	        this.name = source["name"];
 	        this.exe = source["exe"];
 	        this.win16 = source["win16"];
+	        this.folderSource = source["folderSource"];
 	    }
 	}
 

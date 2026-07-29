@@ -2,3 +2,9 @@ build/bin/
 .DS_Store
 *.app
 /wine-game-wrapper-gui
+
+# Copyrighted game patch sets (CivNet etc.) — resolved at build time from
+# build-inputs/patches/ or downloaded (see external_patches.go). Never commit.
+resources/patches/*/
+!resources/patches/README.md
+build/wgw-cli

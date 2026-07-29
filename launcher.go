@@ -22,6 +22,14 @@ import "fmt"
 //     and cleans up via traps. winemac can't read NE-format icons, so the
 //     Finder icon set on the Wine binary shows in the Dock.
 func generateLauncherScript(profile GameProfile) string {
+	// Base overrides: mcicda (CD audio) + keyremap native, and disable
+	// mscoree/mshtml so Wine never prompts to install Mono/Gecko (no game
+	// here uses .NET or HTML). Profiles can append their own, e.g. SMAC sets
+	// "ddraw=n,b" to load the bundled cnc-ddraw wrapper.
+	dllOverrides := "mcicda=n;keyremap=n;mscoree=d;mshtml=d"
+	if profile.DLLOverrides != "" {
+		dllOverrides += ";" + profile.DLLOverrides
+	}
 	head := fmt.Sprintf(`#!/bin/bash
 #
 # Auto-generated launcher for %s
@@ -85,7 +93,7 @@ kill_wine_procs() {
 kill_wine_procs
 
 export WINEPREFIX="$PREFIX"
-export WINEDLLOVERRIDES="mcicda=n;keyremap=n"
+export WINEDLLOVERRIDES=%q
 export WINEDEBUG=-all
 export DYLD_FALLBACK_LIBRARY_PATH="$APP_DIR/Resources/wine/lib"
 
@@ -117,7 +125,7 @@ if [ -f "$PREFIX/drive_c/keyhook.exe" ] && [ -f "$PREFIX/drive_c/keyremap.ini" ]
     "$WINE" "C:\keyhook.exe" &
     sleep 1
 fi
-`, profile.Name, profile.GameDir, profile.Slug)
+`, profile.Name, profile.GameDir, profile.Slug, dllOverrides)
 
 	if profile.Win16 {
 		return head + fmt.Sprintf(`

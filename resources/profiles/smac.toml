@@ -27,6 +27,40 @@ install = "copy-source-dir"
 # its surface to; at 1920x1080 it falls back to a 640x480 surface and mismatches.
 desktop = "1024x768"
 
-# No keymap: SMAC binds unit orders to letter keys (u/o/j/k/l etc.), so the
-# Civ-style 789/uo/jkl -> numpad remap would clobber real hotkeys. SMAC already
-# supports numpad unit movement natively.
+# cnc-ddraw: modern winemac/Metal Wine 11 cannot present SMAC's old fullscreen
+# DirectDraw mode-switch (it white-screens — the reason GOG shipped SMAC on an
+# ancient X11 Wineskin). The bundled cnc-ddraw wrapper (GPL, redistributable)
+# re-implements DirectDraw and renders via its own GDI path in a window. The
+# game source master carries ddraw.dll + ddraw.ini (with a [terranx] section)
+# + Shaders/; this override tells Wine to load that native wrapper.
+# NOTE: only the GDI renderer presents on winemac — the OpenGL/Direct3D9
+# renderers white/black-screen. See ddraw.ini's [terranx] section.
+dll_overrides = "ddraw=n,b"
+
+# Remap 789/uo/jkl to the numpad for unit movement, so diagonal moves work on a
+# keyboard without a numpad (same layout as Civ2). SMAC's native unit movement
+# is on the numpad; this trades the u/o/j/k/l letter hotkeys for movement.
+[[keymap]]
+from = "7"
+to = "num7"
+[[keymap]]
+from = "8"
+to = "num8"
+[[keymap]]
+from = "9"
+to = "num9"
+[[keymap]]
+from = "u"
+to = "num4"
+[[keymap]]
+from = "o"
+to = "num6"
+[[keymap]]
+from = "j"
+to = "num1"
+[[keymap]]
+from = "k"
+to = "num2"
+[[keymap]]
+from = "l"
+to = "num3"

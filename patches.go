@@ -30,12 +30,10 @@ func applyGamePatches(gameDir, patchesDir string, profile GameProfile, r Progres
 // applyOverlay copies the files of resources/patches/<Source> over the game
 // directory, matching existing filenames case-insensitively.
 func applyOverlay(gameDir, patchesDir string, o OverlayPatch, r ProgressReporter) error {
-	if patchesDir == "" {
-		r.Logf("  Warning: patch files for %q not found, skipping", o.Source)
-		return nil
-	}
-	srcDir := filepath.Join(patchesDir, o.Source)
-	if _, err := os.Stat(srcDir); err != nil {
+	// Resolve the patch files: embedded, then user-supplied build-inputs, then
+	// download (for sources we can't bundle for licensing reasons, e.g. civnet).
+	srcDir := resolveOverlaySource(patchesDir, o.Source, r)
+	if srcDir == "" {
 		r.Logf("  Warning: patch files for %q not found, skipping", o.Source)
 		return nil
 	}

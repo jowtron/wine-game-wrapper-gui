@@ -1,38 +1,66 @@
-# Civilization II: Test of Time (1999) — Win32, InstallShield 5 CD.
-# Same MicroProse engine generation and CD layout as Civ2 MGE: the game
-# files (civ2.exe + cv/mk/pv/ss/Intro/Tiles/… DLLs + scenario data) are all
-# inside data1.cab, so we extract with unshield (brew install unshield) and
-# never run the interactive installer. The disc's Civ2/Video/*.avi are read
-# from the CD at runtime; they are Intel Indeo 5 (IV50) which Wine can't
-# decode, so — exactly as for MGE — the Video dir is NOT retained and the
-# game skips movies and plays fine. See TODO-civ2-movies.md.
+# Civilization II: Test of Time (1999) — Win32.
+#
+# ToT does NOT work as a plain InstallShield extraction: its civ2.exe crashes
+# during menu building on 64-bit Wine, and even once running it can't find its
+# per-game-type data. It is built instead from a prepared install FOLDER
+# (install = "copy-source-dir", -src <folder>) that carries three things a raw
+# CD extraction lacks:
+#
+#   1. The official v1.1 patch (civ2tot11en.exe) applied over the CD's v1.0.
+#   2. The Test of Time Patch Project (TOTPP v0.18.4): TOTLauncher.exe patches
+#      civ2.exe to load TOTPP.dll, fixing the 64-bit menu-build crash (a
+#      LocalAlloc/LocalLock NULL write) and disabling the CD check. The patched
+#      civ2.exe + TOTPP.dll + lua.dll ship in the folder.
+#   3. Merged game-type folders. The CD splits each game type across two
+#      InstallShield components ("Original" + "Original Game Files"); the real
+#      installer merges them. Without the merge, C:\ToT\Original\ is missing
+#      Labels.txt and its .bmp graphics, and starting a game dies with
+#      "Error -8 in module 4" (a failed LABELS.TXT load). The master has the
+#      *_Game_Files components merged into the game-type folders.
+#
+# See TODO-civ2tot.md / PROJECT_JOURNAL.md for how to regenerate the master.
+# The Video dir is not shipped (Intel Indeo 5 the game skips; see
+# TODO-civ2-movies.md). No CD is needed (TOTPP disables the check), so there is
+# no retain_cd / cd_label.
 name = "Civilization II: Test of Time"
 slug = "civ2tot"
 exe = "civ2.exe"
 win16 = false
 game_dir = "ToT"
 theme = "auto"  # follow the macOS light/dark appearance for menus/dialogs/chrome
-install = "extract-installshield"
-# Run in a virtual desktop sized to a standard mode so a fullscreen
-# ChangeDisplaySettings succeeds (on the raw Retina display it returns BADMODE
-# and civ2.exe crashes). See virtual-desktop-activator note.
-desktop = "1024x768"
-# CD-check markers only (same MicroProse scheme as MGE). The label must match
-# the real disc exactly (the game scans CD-ROM drives for it) and a few small
-# root files stand in as the disc. Retaining Civ2/civ2.exe (not Video/) keeps
-# the check happy without shipping the unplayable Indeo movies.
-retain_cd = [
-  "Civ2/civ2.exe",
-  "DATA.TAG",
-  "lang.dat",
-  "os.dat",
-  "layout.bin",
-]
-cd_label = "TEST OF TIME V1.0"
+install = "copy-source-dir"
 
-# NO keymap: unlike Civ2 MGE, ToT's civ2.exe crashes when the keyremap global
-# hook (keyhook.exe/keyremap.dll) injects into it (verified: access violation at
-# 0059DFBA with the hook active, runs without it). Left disabled until the hook
-# is made safe for this binary. (ToT also has a deeper DirectDraw rendering issue
-# on winemac — see virtual-desktop-activator note — so the keymap is moot until
-# that's solved.)
+# ToT renders with Wine's BUILTIN DirectDraw (unlike SMAC it has no winemac
+# presentation problem, so no cnc-ddraw wrapper). Running inside a virtual
+# desktop sized larger than the old 1024x768 lets ToT offer and render at a
+# bigger resolution (Game > Graphic Options), filling more of the screen.
+desktop = "1680x1050"
+
+# Remap 789/uo/jkl to the numpad for unit movement on a keyboard without a
+# numpad (same layout as Civ2 MGE). The old note that the keyremap hook crashed
+# ToT's civ2.exe predates TOTPP; the TOTPP-patched binary takes the hook fine
+# (re-verified: no fault, game runs).
+[[keymap]]
+from = "7"
+to = "num7"
+[[keymap]]
+from = "8"
+to = "num8"
+[[keymap]]
+from = "9"
+to = "num9"
+[[keymap]]
+from = "u"
+to = "num4"
+[[keymap]]
+from = "o"
+to = "num6"
+[[keymap]]
+from = "j"
+to = "num1"
+[[keymap]]
+from = "k"
+to = "num2"
+[[keymap]]
+from = "l"
+to = "num3"
