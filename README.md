@@ -196,6 +196,23 @@ to   = "num7"
 wails dev             # GUI with hot reload
 ```
 
+## Roadmap
+
+- **Intel Macs** — supported. The bundled Wine is x86_64, so the game apps run
+  natively on Intel (and via Rosetta 2 on Apple Silicon). The GUI ships as a
+  **universal** binary (`./build.sh gui` → `wails build -platform darwin/universal`).
+- **Linux** — planned, as its own effort. The Go core (CUE/BIN splitting, FLAC,
+  unshield, profiles, the `mcicda`/keyremap/cnc-ddraw payloads, the game
+  knowledge) is portable; what's macOS-specific is the packaging (`.app`),
+  Wine source, launcher, icons, and theme detection. Those would move behind a
+  small platform interface with a Linux backend that outputs an AppImage.
+  A nice bonus: the macOS rendering workarounds (cnc-ddraw, virtual-desktop
+  hacks) are winemac-specific — on Linux these old games largely "just render."
+  Display target: **X11 / XWayland** first — `winex11.drv` is the battle-tested
+  reference path for 1990s DirectDraw/Win16 games and runs fine on Wayland
+  desktops via XWayland. Native `winewayland.drv` is maturing quickly and is the
+  eventual target, but X11 is the pragmatic starting point for this era of game.
+
 ## License
 
 This project's own code is **MIT** (see [`LICENSE`](LICENSE)). It bundles or

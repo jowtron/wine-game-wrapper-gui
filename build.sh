@@ -20,8 +20,8 @@ MASTERS="$HOME/Library/Application Support/wine-game-wrapper/build-inputs/master
 OUT_DIR="${OUT_DIR:-/Applications}"
 
 build_gui() {
-    echo "==> Building GUI app (wails build)…"
-    wails build
+    echo "==> Building GUI app (universal: arm64 + amd64)…"
+    wails build -platform darwin/universal
     echo "    -> build/bin/wine-game-wrapper-gui.app"
 }
 
