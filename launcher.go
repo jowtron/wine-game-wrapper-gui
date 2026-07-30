@@ -54,7 +54,8 @@ WINE="$APP_DIR/Resources/wine/bin/wine"
 WINESERVER="$APP_DIR/Resources/wine/bin/wineserver"
 PREFIX="$APP_DIR/Resources/wineprefix"
 GAME_DIR=%q
-DATA_DIR="$HOME/Library/Application Support/wine-game-wrapper/%s"
+GAME_SLUG=%q
+DATA_DIR="$HOME/Library/Application Support/wine-game-wrapper/$GAME_SLUG"
 
 # Fix dosdevices symlinks (they break when .app is moved). Also drop any
 # d:: DEVICE link: mountmgr matches real volumes (e.g. mounted disk
@@ -153,8 +154,10 @@ trap 'exit 1' INT TERM HUP
 
 # Launch game in background so signals can interrupt 'wait' and fire the trap.
 # (Foreground commands block trap delivery in bash.)
+LOG_DIR="$HOME/Library/Logs/wine-game-wrapper"
+mkdir -p "$LOG_DIR"
 cd "%s"
-nice -n 19 "$WINE" %s &
+nice -n 19 "$WINE" %s > "$LOG_DIR/$GAME_SLUG-last-run.log" 2>&1 &
 GAME_PID=$!
 
 # Wait only for the game process — once it exits, clean up and quit.
@@ -179,11 +182,17 @@ LAUNCH_PID=$$
     kill_wine_procs
 ) &
 
+# Persist Wine's output so crashes are diagnosable after the fact (Finder
+# launches otherwise discard stderr — including the page-fault register dump
+# and backtrace). One log per game, truncated on each launch.
+LOG_DIR="$HOME/Library/Logs/wine-game-wrapper"
+mkdir -p "$LOG_DIR"
+
 # exec so the game runs AS this .app's process: one Dock tile, our icon,
 # and winemac can activate/front the window. The absolute unix path
 # matters — a bare or DOS-style name goes through start.exe.
 cd "%s"
-exec nice -n 19 "$WINE" "$PREFIX/drive_c/$GAME_DIR/"%s
+exec nice -n 19 "$WINE" "$PREFIX/drive_c/$GAME_DIR/"%s > "$LOG_DIR/$GAME_SLUG-last-run.log" 2>&1
 `, gameCwd, exeRel)
 }
 
