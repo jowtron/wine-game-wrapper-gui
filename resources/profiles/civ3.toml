@@ -104,6 +104,48 @@ value = 'C:\Civ3\civ3PTW'
 [[overlay]]
 source = "civ3"
 
+# Deadlock fix ("stuck record" freeze): sound.dll's audio thread posts
+# notification 0x7F4 to the main window and, on failure, RETRIES FOREVER
+# ("PostMesage Fail!" + Sleep(100) + repost, `je` back). If the main thread
+# can't drain its queue (busy in Miles, or blocked on the audio lock the
+# poster holds), the two threads deadlock: game stops responding, CoreAudio
+# loops the last buffer. Observed twice in the field (2026-07-31, both with
+# the stuck-record symptom; process sample showed all threads asleep =
+# deadlock, not a spin). NOP the 4 retry `je`s (74 xx -> 90 90): each site
+# falls through to its normal give-up epilogue after ONE retry — worst case
+# a music-transition notification is dropped; the game never wedges.
+[[hexpatch]]
+file = "Conquests/sound.dll"
+desc = "bounded retry #1 for audio PostMessage (VA 0x1002b612)"
+expect_size = 454656
+offset = 177682
+expect = [0x74, 0xDF]
+replace = [0x90, 0x90]
+
+[[hexpatch]]
+file = "Conquests/sound.dll"
+desc = "bounded retry #2 for audio PostMessage (VA 0x1002b72c)"
+expect_size = 454656
+offset = 177964
+expect = [0x74, 0xE2]
+replace = [0x90, 0x90]
+
+[[hexpatch]]
+file = "Conquests/sound.dll"
+desc = "bounded retry #3 for audio PostMessage (VA 0x1002b7ec)"
+expect_size = 454656
+offset = 178156
+expect = [0x74, 0xE2]
+replace = [0x90, 0x90]
+
+[[hexpatch]]
+file = "Conquests/sound.dll"
+desc = "bounded retry #4 for audio PostMessage (VA 0x1002bb23)"
+expect_size = 454656
+offset = 178979
+expect = [0x74, 0xDC]
+replace = [0x90, 0x90]
+
 # 789/uo/jkl -> numpad keymap for unit movement (Macs without a numpad).
 # HISTORY: an earlier session measured keyhook.exe re-triggering the Miles
 # "PostMesage Fail!" hang (~196 fails/run) and banned the keymap — but that

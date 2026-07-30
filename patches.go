@@ -136,7 +136,7 @@ func (h HexPatch) describe() string {
 // applyHexPatch applies an in-place byte patch with verification.
 // It is idempotent: if the replace bytes are already present, it succeeds.
 func applyHexPatch(gameDir string, h HexPatch, r ProgressReporter) error {
-	path := findCaseInsensitive(gameDir, h.File)
+	path := findCaseInsensitivePath(gameDir, h.File)
 	if path == "" {
 		return fmt.Errorf("%s not found in game files", h.File)
 	}
