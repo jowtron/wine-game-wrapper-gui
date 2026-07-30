@@ -88,9 +88,15 @@ value = 'C:\Civ3\civ3PTW'
 #                 change) — fixes the launch self-exit AND keeps the Miles
 #                 window valid (with no virtual desktop). THE load-bearing fix.
 #   PlayIntro=0   skip the intro Bink movie (it hangs / blocks the main menu).
-#   Music Volume=0 + SFX Volume=128  music halts after a while under Wine (Miles
-#                 timer bug) and re-hangs the game, so ship music OFF, SFX ON.
-#                 Users can re-enable music in Preferences at their own risk.
+#   Music Volume=90 + SFX Volume=128  music AND sfx on. The old "music halts
+#                 then hangs (Miles timer bug)" report — like the keymap ban —
+#                 predates the fixed full-tree install: retested 2026-07-31,
+#                 MP3 menu music streams and plays cleanly (user-confirmed by
+#                 ear; earlier "glitchy" audio was WINEDEBUG tracing jitter).
+#                 If a halt-then-hang ever appears, mute here first; the next
+#                 escalation would be a newer Mss32.dll (NOT bundled — Miles
+#                 is proprietary, and the shipped 2003-era Mss32 must stay
+#                 version-paired with its redist\win32 ASI codecs).
 # NOTE (likely next wall): if terrain renders BLACK once a game starts, that is
 # WineHQ bug 41930 (Civ3's OpenGL-into-DIB path). The macOS fix is the C3X exe
 # mod's "draw_lines_using_gdi_plus = wine" (GDI+ instead of OpenGL); the Linux
