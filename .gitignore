@@ -5,6 +5,10 @@ build/bin/
 
 # Copyrighted game patch sets (CivNet etc.) — resolved at build time from
 # build-inputs/patches/ or downloaded (see external_patches.go). Never commit.
+# Exception: civ3's overlay is self-authored config (conquests.ini launch
+# recipe + a minimal Text/version.txt "#LANGUAGE 0"), no game content — it
+# must ship in the repo for the embedded build to work.
 resources/patches/*/
 !resources/patches/README.md
+!resources/patches/civ3/
 build/wgw-cli

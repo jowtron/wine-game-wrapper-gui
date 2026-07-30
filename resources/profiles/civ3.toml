@@ -1,0 +1,131 @@
+# Sid Meier's Civilization III: Complete (2003 Conquests engine) — Win32.
+#
+# Built from the DRM-free GOG install (setup_civilization3_complete_*.exe),
+# extracted with innoextract. The retail discs are SafeDisc-protected and
+# won't run under Wine; GOG ships the de-protected game, so this profile uses
+# install = "copy-source-dir" and points -src at the extracted game folder.
+#
+# IMPORTANT — the GOG "Complete" package contains only ONE playable engine:
+# Conquests (Civ3Conquests.exe). There is no separate base-game or Play-the-
+# World game exe (only their world-builder editors survive). Conquests is a
+# strict superset: base Civ3 and PTW rulesets + scenarios are all reachable
+# from inside Conquests' New Game / Scenarios menus.
+#
+# BUT Conquests' folder is NOT self-contained: its path resolver searches
+# three roots — its own dir (CWD), then the PTW and base-game install dirs
+# read from HKLM registry Install_Path values. Files like Text\version.txt
+# and art\PopUpAndMenuBackground.pcx exist ONLY in the base tree. With a
+# Conquests-only install every miss becomes an "Unable to find file" popup,
+# and the first such popup fires BEFORE labels.txt is loaded, so the popup
+# code dereferences the NULL labels array -> the 0x5cdbe6 init crash that
+# blocked this port. The fix is to ship the WHOLE GOG app/ tree (base +
+# civ3PTW + Conquests) and seed the two Install_Path registry values below,
+# exactly like a real Windows install. So -src points at the app/ ROOT:
+#
+#   .../wine-game-wrapper-gui build -game civ3 \
+#     -src "$HOME/Library/Application Support/wine-game-wrapper/build-inputs/masters/civ3/app"
+#
+# GOG converted the CD audio to in-game MP3s (Sounds/), so there is no CD
+# audio to wire up (no retain_cd / cd_label).
+name = "Civilization III Complete"
+slug = "civ3"
+exe = "Conquests/Civ3Conquests.exe"
+win16 = false
+game_dir = "Civ3"
+theme = "auto"  # follow the macOS light/dark appearance for menus/dialogs/chrome
+install = "copy-source-dir"
+
+# NO Wine virtual desktop. This is the opposite of ToT/SMAC and is REQUIRED:
+# inside a virtual desktop, Civ3's Miles Sound System streaming thread
+# PostMessage()s to a window Wine then rejects, and the game hangs forever
+# spamming its own "PostMesage Fail!" debug string (296+/run, verified). With
+# the virtual desktop OFF and KeepRes=1 set (see the conquests.ini overlay
+# below), the window is valid, PostMessage succeeds, and the game reaches the
+# menu cleanly. desktop = "none" makes prefix.go skip the Explorer\Desktop keys.
+# This is the CrossOver-published, macOS-Sequoia-tested recipe.
+desktop = "none"
+
+# innoextract dumps the files the GOG installer would place into the install
+# tree under __support/save/ (LSANS.TTF for all three roots — the game font,
+# probed next to the exe; "Error loading font (Error Code: 13)" without it —
+# plus Conquests' master ruleset conquests.biq and conquests.mb, which exist
+# NOWHERE else in the package). Merge that staging dir onto the tree exactly
+# like the real installer does.
+[[merge]]
+from = "__support/save"
+to = "."
+
+# The resolver's base-game and PTW roots (see the header comment). The game
+# is 32-bit, so under the wow64 prefix it reads HKLM\Software through the
+# Wow6432Node view — seed both views to be safe.
+[[registry]]
+key = 'HKEY_LOCAL_MACHINE\Software\Wow6432Node\Infogrames Interactive\Civilization III'
+name = "Install_Path"
+value = 'C:\Civ3'
+
+[[registry]]
+key = 'HKEY_LOCAL_MACHINE\Software\Wow6432Node\Infogrames\Civ3PTW'
+name = "Install_Path"
+value = 'C:\Civ3\civ3PTW'
+
+[[registry]]
+key = 'HKEY_LOCAL_MACHINE\Software\Infogrames Interactive\Civilization III'
+name = "Install_Path"
+value = 'C:\Civ3'
+
+[[registry]]
+key = 'HKEY_LOCAL_MACHINE\Software\Infogrames\Civ3PTW'
+name = "Install_Path"
+value = 'C:\Civ3\civ3PTW'
+
+# Ship Civ3's config with the confirmed launch recipe. The overlay mirrors the
+# game tree: Conquests/conquests.ini sits next to the exe (the game reads and
+# rewrites .\conquests.ini at runtime), and Conquests/Text/version.txt supplies
+# the #LANGUAGE section (0 = English) that init reads — the GOG package ships
+# no version.txt in the Conquests tree, and a real install resolves it from
+# the PTW dir. Ours takes first-root priority, which is safe.
+#   KeepRes=1     run borderless at the current resolution (no display-mode
+#                 change) — fixes the launch self-exit AND keeps the Miles
+#                 window valid (with no virtual desktop). THE load-bearing fix.
+#   PlayIntro=0   skip the intro Bink movie (it hangs / blocks the main menu).
+#   Music Volume=0 + SFX Volume=128  music halts after a while under Wine (Miles
+#                 timer bug) and re-hangs the game, so ship music OFF, SFX ON.
+#                 Users can re-enable music in Preferences at their own risk.
+# NOTE (likely next wall): if terrain renders BLACK once a game starts, that is
+# WineHQ bug 41930 (Civ3's OpenGL-into-DIB path). The macOS fix is the C3X exe
+# mod's "draw_lines_using_gdi_plus = wine" (GDI+ instead of OpenGL); the Linux
+# OSMesa-removal trick does NOT apply to winemac/Metal. Not bundled yet.
+[[overlay]]
+source = "civ3"
+
+# 789/uo/jkl -> numpad keymap for unit movement (Macs without a numpad).
+# HISTORY: an earlier session measured keyhook.exe re-triggering the Miles
+# "PostMesage Fail!" hang (~196 fails/run) and banned the keymap — but that
+# was measured against a game still crashing mid-init (the labels/version.txt
+# bug). Re-tested 2026-07-30 against the fixed full-tree install: 0 PostMesage
+# fails over 3+ min with the hook active. If the hang ever resurfaces, this
+# keymap block is the first thing to remove.
+[[keymap]]
+from = "7"
+to = "num7"
+[[keymap]]
+from = "8"
+to = "num8"
+[[keymap]]
+from = "9"
+to = "num9"
+[[keymap]]
+from = "u"
+to = "num4"
+[[keymap]]
+from = "o"
+to = "num6"
+[[keymap]]
+from = "j"
+to = "num1"
+[[keymap]]
+from = "k"
+to = "num2"
+[[keymap]]
+from = "l"
+to = "num3"

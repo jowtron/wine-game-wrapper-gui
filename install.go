@@ -112,7 +112,7 @@ func installGameFromCD(isoPath string, profile GameProfile, wineBin, prefixDir, 
 	}
 
 	// Sanity check: the game exe must exist after installation
-	if findCaseInsensitive(gameDest, profile.Exe) == "" {
+	if findCaseInsensitivePath(gameDest, profile.Exe) == "" {
 		return fmt.Errorf("%s not found in %s after install — check the profile's game_dir and install strategy", profile.Exe, gameDest)
 	}
 
@@ -155,7 +155,7 @@ func installGameFromSource(sourceDir string, profile GameProfile, prefixDir, res
 	}
 
 	// Sanity check: the game exe must exist after copy
-	if findCaseInsensitive(gameDest, profile.Exe) == "" {
+	if findCaseInsensitivePath(gameDest, profile.Exe) == "" {
 		return fmt.Errorf("%s not found in %s after copy — check the profile's exe and the source folder", profile.Exe, gameDest)
 	}
 

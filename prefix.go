@@ -58,14 +58,29 @@ func initWinePrefix(wineBin, prefixDir string, profile GameProfile, r ProgressRe
 		// virtual desktop runs and the app hits the raw (Retina) display —
 		// games that do a fullscreen ChangeDisplaySettings then get
 		// DISP_CHANGE_BADMODE and crash (observed with Civ2 ToT and SMAC).
-		reg.WriteString("\n[HKEY_CURRENT_USER\\Software\\Wine\\Explorer]\n")
-		reg.WriteString("\"Desktop\"=\"Default\"\n")
-		reg.WriteString("\n[HKEY_CURRENT_USER\\Software\\Wine\\Explorer\\Desktops]\n")
-		reg.WriteString(fmt.Sprintf("\"Default\"=\"%s\"\n", profile.Desktop))
+		//
+		// desktop = "none" DISABLES the virtual desktop: some games break
+		// INSIDE it. Civ3 Conquests is one — inside a Wine virtual desktop its
+		// Miles Sound System streaming thread PostMessage()s to a window that
+		// Wine then rejects, so the game hangs spamming "PostMesage Fail!".
+		// Run with KeepRes=1 (in conquests.ini) instead: no display mode change,
+		// borderless at the current resolution, valid window, no hang.
+		if profile.Desktop != "none" {
+			reg.WriteString("\n[HKEY_CURRENT_USER\\Software\\Wine\\Explorer]\n")
+			reg.WriteString("\"Desktop\"=\"Default\"\n")
+			reg.WriteString("\n[HKEY_CURRENT_USER\\Software\\Wine\\Explorer\\Desktops]\n")
+			reg.WriteString(fmt.Sprintf("\"Default\"=\"%s\"\n", profile.Desktop))
+		}
 		if len(profile.RetainCD) > 0 {
 			// Present drive d: as a CD-ROM so CD checks pass
 			reg.WriteString("\n[HKEY_LOCAL_MACHINE\\Software\\Wine\\Drives]\n")
 			reg.WriteString("\"d:\"=\"cdrom\"\n")
+		}
+		// Profile-declared REG_SZ values (e.g. Civ3's Install_Path roots).
+		// REGEDIT4 string data doubles backslashes; key paths keep single ones.
+		for _, rv := range profile.Registry {
+			reg.WriteString(fmt.Sprintf("\n[%s]\n\"%s\"=\"%s\"\n",
+				rv.Key, rv.Name, strings.ReplaceAll(rv.Value, `\`, `\\`)))
 		}
 		regFile.WriteString(reg.String())
 		regFile.Close()

@@ -23,7 +23,7 @@ type GameProfile struct {
 	Win16    bool     `toml:"win16"`     // True if Win16 app requiring otvdm
 	BundleID string   `toml:"bundle_id"` // macOS bundle identifier; default com.retrowine.<slug>
 	GameDir  string   `toml:"game_dir"`  // Directory name inside drive_c; default: name
-	Desktop  string   `toml:"desktop"`   // Wine virtual desktop size; default 1920x1080
+	Desktop  string   `toml:"desktop"`   // Wine virtual desktop size; default 1920x1080; "none" disables it (see prefix.go)
 	Theme    string   `toml:"theme"`     // Windows UI theme: "", "light", "dark", "auto"
 	Install  string   `toml:"install"`   // Install strategy; default copy-cd-root (see install.go)
 	RetainCD []string `toml:"retain_cd"` // CD paths to bundle and map as drive d:
@@ -35,9 +35,11 @@ type GameProfile struct {
 	// mscoree/mshtml) are always present; this adds to them.
 	DLLOverrides string `toml:"dll_overrides"`
 
-	Overlays   []OverlayPatch `toml:"overlay"`  // File-copy patch sets
-	HexPatches []HexPatch     `toml:"hexpatch"` // In-place byte patches
-	Keymap     []KeymapEntry  `toml:"keymap"`   // Keyboard remappings by key name
+	Overlays   []OverlayPatch  `toml:"overlay"`  // File-copy patch sets
+	HexPatches []HexPatch      `toml:"hexpatch"` // In-place byte patches
+	Keymap     []KeymapEntry   `toml:"keymap"`   // Keyboard remappings by key name
+	Registry   []RegistryValue `toml:"registry"` // String values seeded into the prefix registry
+	Merges     []DirMerge      `toml:"merge"`    // In-tree staging-dir merges (see applyMerge)
 }
 
 // OverlayPatch copies the files of resources/patches/<Source> over the
@@ -45,6 +47,26 @@ type GameProfile struct {
 type OverlayPatch struct {
 	Source string   `toml:"source"`
 	Skip   []string `toml:"skip"` // Filenames to skip (e.g. readme files)
+}
+
+// DirMerge copies one subtree of the installed game dir onto another and
+// removes the source — for installer staging dirs like innoextract's
+// __support/save (files a GOG Inno installer places into the tree itself).
+// Paths are slash-separated and relative to the game dir; To "." = the root.
+type DirMerge struct {
+	From string `toml:"from"`
+	To   string `toml:"to"`
+}
+
+// RegistryValue is a REG_SZ value written into the prefix at build time.
+// Games that read install paths from the registry (e.g. Civ3's resolver
+// falls back to Install_Path for its base-game and PTW roots) declare them
+// here. Under a wow64 prefix, 32-bit apps read HKLM\Software through the
+// Wow6432Node view, so profiles should list that variant explicitly.
+type RegistryValue struct {
+	Key   string `toml:"key"`   // e.g. `HKEY_LOCAL_MACHINE\Software\...`
+	Name  string `toml:"name"`  // Value name, e.g. "Install_Path"
+	Value string `toml:"value"` // String data, e.g. `C:\Civ3`
 }
 
 // HexPatch is an in-place byte patch with verification, e.g. a widescreen fix.

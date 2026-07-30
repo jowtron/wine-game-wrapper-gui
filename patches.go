@@ -8,8 +8,14 @@ import (
 )
 
 // applyGamePatches applies the profile's declarative patches to the installed
-// game directory: overlay file sets first, then hex patches.
+// game directory: in-tree merges first, then overlay file sets, then hex
+// patches.
 func applyGamePatches(gameDir, patchesDir string, profile GameProfile, r ProgressReporter) error {
+	for _, m := range profile.Merges {
+		if err := applyMerge(gameDir, m, r); err != nil {
+			return err
+		}
+	}
 	for _, o := range profile.Overlays {
 		if err := applyOverlay(gameDir, patchesDir, o, r); err != nil {
 			return err
@@ -24,6 +30,36 @@ func applyGamePatches(gameDir, patchesDir string, profile GameProfile, r Progres
 			return err
 		}
 	}
+	return nil
+}
+
+// applyMerge copies one subtree of the installed game dir onto another and
+// removes the source. This models installer staging dirs: e.g. innoextract
+// dumps files a GOG Inno installer would place into the install tree under
+// __support/save/, so Civ3 merges "__support/save" -> "." (LSANS.TTF,
+// conquests.biq, ...). The staging dir is deleted after the merge so the
+// bundle doesn't ship duplicate copies.
+func applyMerge(gameDir string, m DirMerge, r ProgressReporter) error {
+	src := filepath.Join(gameDir, filepath.FromSlash(m.From))
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		r.Logf("  Warning: merge source %q not found, skipping", m.From)
+		return nil
+	}
+	dst := gameDir
+	if m.To != "" && m.To != "." {
+		dst = filepath.Join(gameDir, filepath.FromSlash(m.To))
+		if err := os.MkdirAll(dst, 0o755); err != nil {
+			return fmt.Errorf("create merge dest %s: %w", dst, err)
+		}
+	}
+	count, err := overlayDir(src, dst, nil)
+	if err != nil {
+		return err
+	}
+	if err := os.RemoveAll(src); err != nil {
+		return fmt.Errorf("remove merged staging dir %s: %w", src, err)
+	}
+	r.Logf("  Merged %q into %q (%d files)", m.From, m.To, count)
 	return nil
 }
 
@@ -43,27 +79,51 @@ func applyOverlay(gameDir, patchesDir string, o OverlayPatch, r ProgressReporter
 		skip[strings.ToLower(s)] = true
 	}
 
+	count, err := overlayDir(srcDir, gameDir, skip)
+	if err != nil {
+		return err
+	}
+	r.Logf("  Applied overlay %q (%d files)", o.Source, count)
+	return nil
+}
+
+// overlayDir recursively copies srcDir's files onto gameDir, matching existing
+// names (files and directories) case-insensitively. Returns the file count.
+func overlayDir(srcDir, gameDir string, skip map[string]bool) (int, error) {
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {
-		return fmt.Errorf("read patch dir %s: %w", srcDir, err)
+		return 0, fmt.Errorf("read patch dir %s: %w", srcDir, err)
 	}
 	count := 0
 	for _, e := range entries {
-		if e.IsDir() || skip[strings.ToLower(e.Name())] {
+		if skip[strings.ToLower(e.Name())] {
 			continue
 		}
 		src := filepath.Join(srcDir, e.Name())
 		dst := findCaseInsensitive(gameDir, e.Name())
+		if e.IsDir() {
+			if dst == "" {
+				dst = filepath.Join(gameDir, e.Name())
+				if err := os.MkdirAll(dst, 0o755); err != nil {
+					return count, fmt.Errorf("create patch dir %s: %w", dst, err)
+				}
+			}
+			n, err := overlayDir(src, dst, skip)
+			count += n
+			if err != nil {
+				return count, err
+			}
+			continue
+		}
 		if dst == "" {
 			dst = filepath.Join(gameDir, e.Name())
 		}
 		if err := copyFile(src, dst); err != nil {
-			return fmt.Errorf("apply patch file %s: %w", e.Name(), err)
+			return count, fmt.Errorf("apply patch file %s: %w", e.Name(), err)
 		}
 		count++
 	}
-	r.Logf("  Applied overlay %q (%d files)", o.Source, count)
-	return nil
+	return count, nil
 }
 
 func (h HexPatch) describe() string {
@@ -119,6 +179,23 @@ func applyHexPatch(gameDir string, h HexPatch, r ProgressReporter) error {
 	}
 	r.Logf("  Applied %s", h.describe())
 	return nil
+}
+
+// findCaseInsensitivePath resolves a relative path (slash- or
+// backslash-separated) under dir, matching every component case-insensitively.
+// Returns the full path if found, empty string otherwise.
+func findCaseInsensitivePath(dir, rel string) string {
+	cur := dir
+	for _, part := range strings.Split(strings.ReplaceAll(rel, "\\", "/"), "/") {
+		if part == "" || part == "." {
+			continue
+		}
+		cur = findCaseInsensitive(cur, part)
+		if cur == "" {
+			return ""
+		}
+	}
+	return cur
 }
 
 // findCaseInsensitive finds a file in dir matching name case-insensitively.

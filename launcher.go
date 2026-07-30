@@ -1,6 +1,10 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"path"
+	"strings"
+)
 
 // generateLauncherScript returns the bash launcher script content for the .app bundle.
 //
@@ -29,6 +33,15 @@ func generateLauncherScript(profile GameProfile) string {
 	dllOverrides := "mcicda=n;keyremap=n;mscoree=d;mshtml=d"
 	if profile.DLLOverrides != "" {
 		dllOverrides += ";" + profile.DLLOverrides
+	}
+
+	// The exe may live in a subdirectory of the game dir (e.g. Civ3's
+	// Conquests/Civ3Conquests.exe). Run with CWD = the exe's own directory —
+	// these games resolve data files relative to it.
+	exeRel := strings.ReplaceAll(profile.Exe, "\\", "/")
+	gameCwd := `$PREFIX/drive_c/$GAME_DIR`
+	if dir := path.Dir(exeRel); dir != "." {
+		gameCwd += "/" + dir
 	}
 	head := fmt.Sprintf(`#!/bin/bash
 #
@@ -140,14 +153,14 @@ trap 'exit 1' INT TERM HUP
 
 # Launch game in background so signals can interrupt 'wait' and fire the trap.
 # (Foreground commands block trap delivery in bash.)
-cd "$PREFIX/drive_c/$GAME_DIR"
+cd "%s"
 nice -n 19 "$WINE" %s &
 GAME_PID=$!
 
 # Wait only for the game process — once it exits, clean up and quit.
 # ('wait $pid' is interruptible by signals, unlike foreground commands.)
 wait $GAME_PID 2>/dev/null
-`, profile.Exe)
+`, gameCwd, path.Base(exeRel))
 	}
 
 	return head + fmt.Sprintf(`
@@ -169,9 +182,9 @@ LAUNCH_PID=$$
 # exec so the game runs AS this .app's process: one Dock tile, our icon,
 # and winemac can activate/front the window. The absolute unix path
 # matters — a bare or DOS-style name goes through start.exe.
-cd "$PREFIX/drive_c/$GAME_DIR"
+cd "%s"
 exec nice -n 19 "$WINE" "$PREFIX/drive_c/$GAME_DIR/"%s
-`, profile.Exe)
+`, gameCwd, exeRel)
 }
 
 // generateInfoPlist returns the Info.plist XML content for the .app bundle.

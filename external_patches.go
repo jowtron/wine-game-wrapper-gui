@@ -86,6 +86,9 @@ func dirHasFiles(dir string) bool {
 		if !e.IsDir() {
 			return true
 		}
+		if dirHasFiles(filepath.Join(dir, e.Name())) {
+			return true
+		}
 	}
 	return false
 }
