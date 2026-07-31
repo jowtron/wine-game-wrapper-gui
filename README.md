@@ -39,6 +39,7 @@ You supply the game (see [Bring your own game files](#bring-your-own-game-files)
 | Sid Meier's CivNet | Win16 (otvdm) | CD music; official 1.0.2 patch fetched at build time |
 | Sid Meier's Colonization | Win16 (otvdm) | CD music |
 | Sid Meier's Alpha Centauri | Win32 | Renders via bundled [cnc-ddraw]; built from a DRM-free (e.g. GOG) install |
+| Civilization III — Complete | Win32 | Built from a DRM-free (e.g. GOG) install; **in-game music is off** — enabling it kills all audio mid-game and hangs the exit (see `TODO-civ3-fable-handover.md`) |
 
 Adding another game is usually just a [TOML profile](#adding-a-game) — no code.
 

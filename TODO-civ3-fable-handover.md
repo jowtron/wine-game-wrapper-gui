@@ -1,4 +1,63 @@
-# Civ3 Complete — Fable handover (winemac port, blocked on an init crash)
+# Civ3 Complete — port notes (winemac). Init crash SOLVED; audio bug OPEN.
+
+## ⚠️ OPEN 2026-07-31 — the audio system dies mid-game (music must stay off)
+
+**Symptom chain, all user-confirmed:** with `Music Volume` > 0, ALL sound
+(music *and* SFX) works for a few minutes, then dies together, leaving the last
+buffer looping ("stuck record"). The game stays fully playable. Quitting then
+hangs forever, spinning at ~100% CPU, and needs a force kill
+(`~/Quit Civ3.command` on this Mac). With music off, none of it happens.
+
+**REPRO TRIGGER (user, 2026-07-31) — the key to fixing this:** it dies right
+around *founding the first city* → the city dialog opens → changing production
+to Settlers. That is a window create/destroy moment, which fits the leading
+theory below. There is a `Conquests Autosave 4000 BC.SAV` (turn 1, city not yet
+founded) in the user's save dir, and Civ3 registers `.SAV` for double-click, so
+passing a save path as argv[1] very likely boots straight into that state — a
+3-keystroke repro instead of an hour of play.
+
+**Leading theory (unproven):** `sound.dll` caches a notification HWND (per
+stream at `[esi+0x1c]`, plus a global at `[0x100b416c]`) and posts msg `0x7F4`
+to it. If that window is destroyed when the city screen opens/closes, every
+later post fails, and each of the 4 post sites **retries forever**
+(`"PostMesage Fail!"` → `Sleep(100)` → repost). That wedges the audio thread,
+which explains all four symptoms at once — including the hung exit, where
+shutdown waits on that thread. Note the game's `PostMesage Fail!` printf is
+**buffered and lost on kill -9**, so an empty log proves nothing.
+
+**Next step:** filtered relay tracing — set `RelayInclude` under
+`HKCU\Software\Wine\Debug` to just `PostMessageA;timeSetEvent;waveOutWrite`
+(full `+relay` is too heavy and this bug is timing-sensitive), reproduce via the
+autosave, and read the first `PostMessageA` that returns FALSE plus the window
+lifecycle around it. `winedbg` is plan B only: 32-bit code under new-wow64 +
+Rosetta is where its breakpoint support is weakest.
+
+**If the stale-HWND theory holds, the fix is probably 2 bytes.** The earlier
+attempt (commit f555e79, reverted by d88cfcf) NOP'd the retry `je`s at file
+offsets 177682 / 177964 / 178156 / 178979 (`expect_size` 454656) — that stopped
+the deadlock but fell through into the *teardown* epilogue, which kills the
+timer and zeroes the stream handles, so all audio went silent and the exit
+still hung. The better patch jumps to the **success** path instead: drop one
+notification, keep the sound system alive. Same bytes, different target.
+
+**Ruled out, do not repeat (all tried 2026-07-31):**
+1. A newer `Mss32.dll` — all 18 copies on the machine are identical Miles 6.1a,
+   there is no legitimate source, and it is the wrong layer anyway: the failing
+   call is `PostMessageA` inside Firaxis's own `sound.dll` (exports are
+   `Dll_Wave_Device` / `WaveInDeviceMgr` / `SNDERR`, i.e. not Miles). GOG ships
+   the final 1.22 patch, so there is no newer `sound.dll` either.
+2. `WINEDLLOVERRIDES=…;dsound=d` to force Miles onto waveOut — `dsound.dll`
+   never loads, but Miles does not fall back: no `.mp3` is opened at all.
+3. WAV content under an `.mp3` filename to bypass `Mp3dec.asi` — Miles does not
+   sniff the header; instant page fault at `0x26F01951`.
+
+**Diagnostics that actually worked:** `lsof -p <pid>` for open audio files (an
+absent `.mp3` = the stream died) and `sample <pid>` on the LIVE symptom.
+Process-hygiene trap: a dead Civ3 process can linger for many minutes with one
+thread in `__sigsuspend`, so `pgrep | head -1` can hand you a corpse — always
+check `ps ax -o pid,etime` and take the process whose age matches the session.
+
+---
 
 ## ✅ SOLVED 2026-07-30 (Fable) — init crash root-caused and fixed
 
