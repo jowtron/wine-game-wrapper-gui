@@ -1,61 +1,98 @@
-# Civ3 Complete — port notes (winemac). Init crash SOLVED; audio bug OPEN.
+# Civ3 Complete — port notes (winemac). Init crash SOLVED; audio bug SOLVED.
 
-## ⚠️ OPEN 2026-07-31 — the audio system dies mid-game (music must stay off)
+## ✅ SOLVED 2026-07-31 — audio live-lock in sound.dll's mixer (music back ON)
 
-**Symptom chain, all user-confirmed:** with `Music Volume` > 0, ALL sound
-(music *and* SFX) works for a few minutes, then dies together, leaving the last
-buffer looping ("stuck record"). The game stays fully playable. Quitting then
-hangs forever, spinning at ~100% CPU, and needs a force kill
-(`~/Quit Civ3.command` on this Mac). With music off, none of it happens.
+**Symptom chain (was):** with `Music Volume` > 0, ALL sound (music *and* SFX)
+worked for a few minutes, then died together leaving the last buffer looping
+("stuck record"). The game stayed fully playable. Quitting then hung forever at
+~100% CPU. With music off, none of it happened.
 
-**REPRO TRIGGER (user, 2026-07-31) — the key to fixing this:** it dies right
-around *founding the first city* → the city dialog opens → changing production
-to Settlers. That is a window create/destroy moment, which fits the leading
-theory below. There is a `Conquests Autosave 4000 BC.SAV` (turn 1, city not yet
-founded) in the user's save dir, and Civ3 registers `.SAV` for double-click, so
-passing a save path as argv[1] very likely boots straight into that state — a
-3-keystroke repro instead of an hour of play.
+**The old leading theory was WRONG.** It blamed a stale notification HWND and
+`sound.dll`'s retry-forever `PostMessage` loops. Across three separate wedges —
+one soaked 3.5 hours — the game printed `PostMesage Fail!` **zero** times. Those
+retry loops never execute. Anyone re-reading the history below should ignore the
+HWND story entirely.
 
-**Leading theory (unproven):** `sound.dll` caches a notification HWND (per
-stream at `[esi+0x1c]`, plus a global at `[0x100b416c]`) and posts msg `0x7F4`
-to it. If that window is destroyed when the city screen opens/closes, every
-later post fails, and each of the 4 post sites **retries forever**
-(`"PostMesage Fail!"` → `Sleep(100)` → repost). That wedges the audio thread,
-which explains all four symptoms at once — including the hung exit, where
-shutdown waits on that thread. Note the game's `PostMesage Fail!` printf is
-**buffered and lost on kill -9**, so an empty log proves nothing.
+**Actual root cause.** All Civ3 audio is serviced from one winmm
+multimedia-timer callback (`timeSetEvent` at VA `0x10008dc1`, callback
+`0x10008f70`) which takes a global audio critical section and walks the stream
+list. Inside the mixer fill routine, this loop never terminates once a source
+stream runs dry:
 
-**Next step:** filtered relay tracing — set `RelayInclude` under
-`HKCU\Software\Wine\Debug` to just `PostMessageA;timeSetEvent;waveOutWrite`
-(full `+relay` is too heavy and this bug is timing-sensitive), reproduce via the
-autosave, and read the first `PostMessageA` that returns FALSE plus the window
-lifecycle around it. `winedbg` is plan B only: 32-bit code under new-wow64 +
-Rosetta is where its breakpoint support is weakest.
+```
+0x10038b7a  eax = remaining            (non-zero: output still wanted)
+0x10038b80  jne 0x1003885d
+0x10038865  ecx = remaining + srcpos   (> limit)
+0x1003886a  jbe -> not taken
+0x10038871  eax = limit - srcpos       -> 0   (nothing available)
+0x1003887d  [ebp+0x13a4] == 0 -> je 0x100388a0
+0x100388a0  test eax,eax               -> 0
+0x100388a2  je 0x10038b7a              -> back to the top, nothing changed
+```
 
-**If the stale-HWND theory holds, the fix is probably 2 bytes.** The earlier
-attempt (commit f555e79, reverted by d88cfcf) NOP'd the retry `je`s at file
-offsets 177682 / 177964 / 178156 / 178979 (`expect_size` 454656) — that stopped
-the deadlock but fell through into the *teardown* epilogue, which kills the
-timer and zeroes the stream handles, so all audio went silent and the exit
-still hung. The better patch jumps to the **success** path instead: drop one
-notification, keep the sound system alive. Same bytes, different target.
+**Proof, measured on the live wedge** (winedbg attach; `sound.dll` relocates to
+`0x2690000`, so subtract `0xD970000` from static VAs):
+
+```
+0x02743a08 sound+0xb3a08:  ffffffff 00000000 00000001 00000118
+                           DebugInfo LockCount Recursion  OwningThread
+0x02743a20 sound+0xb3a20:  00000001     <- callback reentrancy guard, latched
+```
+
+The audio lock was held by thread `0118` (Wine's mm-timer thread — a
+`winmm+0x38560` frame on its raw stack confirms it), and the guard the callback
+sets on entry never cleared: it went in and never came out. Two of three EIP
+samples landed on exactly `0x100388a0`, an instruction inside that loop.
+
+One fault, all four symptoms: one shared service routine, so music and SFX die
+together; `wine_dsound_mixer` keeps replaying its last buffer; the main thread
+is untouched so play continues; and shutdown at `0x10008e10` does
+`EnterCriticalSection` on the same lock **before** `timeKillEvent`, so quitting
+blocks behind the spinning thread. It is also self-reinforcing — the "refill me"
+notification is posted *after* the walk, so the feeder thread (parked in
+`MsgWaitForMultipleObjects`) is never woken and the source never refills.
+
+**The fix (shipped):** a one-byte `[[hexpatch]]` in `resources/profiles/civ3.toml`
+retargeting `0x100388a2` from the loop test to the routine's own normal exit
+(`0x10038b86`, the path already taken when it's asked for zero bytes) — an
+underrun returns short instead of retrying forever. File offset 231586,
+`0F 84 D2 02 00 00` -> `0F 84 DE 02 00 00`, `expect_size` 454656.
+`conquests.ini` now ships `Music Volume=90`. User-confirmed: music + SFX run a
+full session, the game exits cleanly, and the keymap works (it had been banned
+from this profile on the same misdiagnosis).
+
+**NOT the reverted f555e79 patch**, which NOP'd retry `je`s at offsets
+177682/177964/178156/178979 — those are *teardown* paths whose epilogues kill
+the timer and zero the stream handles, which is why it silenced all audio and
+still hung on exit. This patch touches no teardown code.
 
 **Ruled out, do not repeat (all tried 2026-07-31):**
 1. A newer `Mss32.dll` — all 18 copies on the machine are identical Miles 6.1a,
-   there is no legitimate source, and it is the wrong layer anyway: the failing
-   call is `PostMessageA` inside Firaxis's own `sound.dll` (exports are
-   `Dll_Wave_Device` / `WaveInDeviceMgr` / `SNDERR`, i.e. not Miles). GOG ships
-   the final 1.22 patch, so there is no newer `sound.dll` either.
+   and it is the wrong layer anyway: the defect is in Firaxis's own `sound.dll`.
+   GOG ships the final 1.22 patch, so there is no newer `sound.dll` either.
 2. `WINEDLLOVERRIDES=…;dsound=d` to force Miles onto waveOut — `dsound.dll`
-   never loads, but Miles does not fall back: no `.mp3` is opened at all.
+   never loads, but Miles does not fall back.
 3. WAV content under an `.mp3` filename to bypass `Mp3dec.asi` — Miles does not
    sniff the header; instant page fault at `0x26F01951`.
 
-**Diagnostics that actually worked:** `lsof -p <pid>` for open audio files (an
-absent `.mp3` = the stream died) and `sample <pid>` on the LIVE symptom.
-Process-hygiene trap: a dead Civ3 process can linger for many minutes with one
-thread in `__sigsuspend`, so `pgrep | head -1` can hand you a corpse — always
-check `ps ax -o pid,etime` and take the process whose age matches the session.
+**Method notes worth keeping.**
+- Passing a DOS save path as `argv[1]` boots straight into that save
+  (`Civ3Conquests.exe 'C:\Civ3\Conquests\Saves\Auto\Conquests Autosave 4000 BC.SAV'`),
+  which turns an hour of play into a scripted repro. The bug reproduces
+  **without** founding a city — just boot the save and wait 3–5 minutes. The
+  "founding the first city" trigger in the original report was a coincidence of
+  timing.
+- In-game music is the layered `Sounds/build/<era>/*.wav` stems, **not** MP3, so
+  "no `.mp3` open = the stream died" is not a valid in-game health check.
+- `WINEDEBUG=+debugstr` surfaces `OutputDebugStringA` live and unbuffered — that
+  is how the zero `PostMesage Fail!` count was established.
+- A ~100% CPU thread is **normal** for healthy Civ3; it is not a wedge detector.
+  Read the critical section instead.
+- `winedbg` detach kills the game every time, so budget one capture per repro.
+  Its breakpoints are unusable here: the injected attach thread page-faults at
+  `0xfff40d6c` and eats every `cont`. EIP sampling via `bt all` works fine.
+- Process-hygiene trap: a wedged Civ3 lingers for many minutes, so
+  `pgrep | head -1` can hand you a corpse — check `ps ax -o pid,etime`.
 
 ---
 
@@ -109,6 +146,12 @@ whole file before acting — a lot has been ruled out, don't re-run dead ends.
 The two deliberate trade-offs already decided (keep them unless you find better):
 **music off** (Miles music halts-then-hangs under Wine) and **no numpad keymap**
 (its keyhook re-triggers the audio hang — see below).
+
+> ⚠️ **SUPERSEDED — both trade-offs are gone.** Music ships ON and the keymap is
+> enabled. The "keyhook re-triggers the audio hang" claim was a misdiagnosis of
+> the mixer live-lock; see the SOLVED block at the top of this file. Everything
+> from here down is preserved as history — do not act on its recommendations
+> about audio without checking the top block first.
 
 ---
 
@@ -240,7 +283,8 @@ desktop res, stops the launch resolution-switch self-exit) + `PlayIntro=0` (skip
 the intro Bink, which otherwise blocks the menu). Music off / SFX on because
 music halts-then-hangs under Wine (Miles timer bug) — no source found any config
 that keeps music working; the "IndirectSound dsound.dll" idea was explicitly
-refuted. **Likely NEXT wall after init: "black terrain"** (WineHQ bug 41930) —
+refuted. *(Superseded 2026-07-31: music works with the sound.dll hexpatch. The
+community was right that no **config** fixes it — it needed a binary patch.)* **Likely NEXT wall after init: "black terrain"** (WineHQ bug 41930) —
 Civ3 renders OpenGL v1.x into offscreen DIBs and shows black terrain; on macOS
 the OSMesa-removal trick does NOT apply (that's Linux/Mesa), the community's
 answer is the C3X exe mod's GDI+ path (below).

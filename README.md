@@ -38,13 +38,148 @@ You supply the game (see [Bring your own game files](#bring-your-own-game-files)
 | Civilization II — Test of Time | Win32 | v1.1 + [TOTPP] auto-applied; CD music; runs at high resolution |
 | Sid Meier's CivNet | Win16 (otvdm) | CD music; official 1.0.2 patch fetched at build time |
 | Sid Meier's Colonization | Win16 (otvdm) | CD music |
-| Sid Meier's Alpha Centauri | Win32 | Renders via bundled [cnc-ddraw]; built from a DRM-free (e.g. GOG) install |
-| Civilization III — Complete | Win32 | Built from a DRM-free (e.g. GOG) install; **in-game music is off** — enabling it kills all audio mid-game and hangs the exit (see `TODO-civ3-fable-handover.md`) |
+| Sid Meier's Alpha Centauri | Win32 | Renders via bundled [cnc-ddraw]; built from a DRM-free (e.g. GOG) install; **least tested — still has visual glitches** |
+| Civilization III — Complete | Win32 | Built from a DRM-free (e.g. GOG) install; music + SFX on |
 
 Adding another game is usually just a [TOML profile](#adding-a-game) — no code.
 
 [TOTPP]: https://forums.civfanatics.com/threads/the-test-of-time-patch-project.517282/
 [cnc-ddraw]: https://github.com/FunkyFr3sh/cnc-ddraw
+
+---
+
+## What each game needed
+
+None of these ran usefully out of the box. This is what each one actually took —
+useful if you're porting something similar, or wondering why a profile looks the
+way it does.
+
+### Civilization II — Multiplayer Gold
+
+- **Install** — InstallShield 5 disc, so the files are extracted straight from
+  `data1.cab` (needs `brew install unshield`).
+- **CD check** — the game scans CD-ROM drives for a disc labelled
+  `Civ2:MGE v1.0`. The profile bundles a few small root files to stand in as the
+  disc and maps them as drive `d:`, so the check passes with no disc.
+- **Runtime CD reads** — throne-room and wonder videos are read from the CD
+  while playing, so those directories are bundled too.
+- **Movies dropped** — the `KINGS`/`VIDEO` dirs are deliberately *not* shipped.
+  They're Intel Indeo AVIs that Wine can't decode, and including them makes the
+  game hang on the intro/wonder/council movies. Without them it skips the movies
+  and plays fine. Transcoding to MS Video 1 was proven to work as a conversion
+  but still didn't render under Wine — see `TODO-civ2-movies.md`.
+- **CD audio** — yes, via `mcicda.dll` (see [CD audio](#cd-audio)).
+
+This is also where the shared Win32 launcher behaviour was worked out, and every
+Win32 profile now gets it: the launcher `exec`s into Wine rather than spawning
+it, so the game runs *as* the `.app` process — one Dock tile with the bundle's
+icon, and winemac can front the window. That needs `WINEARCH=wow64` so the
+32-bit exe loads in-process instead of being routed through `start.exe`, plus
+the exe's own PE icon resources hidden so the bundle icon wins.
+
+### Civilization II — Test of Time
+
+Does *not* work as a plain disc extraction. It's built from a prepared install
+folder that carries three things a raw CD lacks:
+
+1. **The official v1.1 patch** over the CD's v1.0.
+2. **[TOTPP] v0.18.4**, which patches `civ2.exe` to load `TOTPP.dll`. This fixes
+   the 64-bit menu-build crash (a `LocalAlloc`/`LocalLock` NULL write) and
+   disables the CD check.
+3. **Merged game-type folders.** The disc splits each game type across two
+   InstallShield components (`Original` and `Original Game Files`) that the real
+   installer merges. Without the merge, `Original\` is missing `Labels.txt` and
+   its graphics, and starting a game dies with `Error -8 in module 4`.
+
+Renders on Wine's **built-in** DirectDraw — unlike SMAC it has no winemac
+presentation problem, so no wrapper. It runs inside a `1680x1050` virtual
+desktop, which lets ToT offer and render at a resolution bigger than the old
+1024×768 and fill more of the screen. Video dir not shipped (Indeo again).
+CD audio comes from pre-ripped FLAC alongside the master, because the
+folder-based install path has no disc to rip from.
+
+### Sid Meier's CivNet
+
+- **Win16**, so it runs under the bundled otvdm/winevdm layer.
+- **Official MicroProse v1.02 patch** — required, but not redistributable, so
+  it's never committed. The build resolves it from a copy you supply or fetches
+  it at build time.
+- **Widescreen fix** — a verified `[[hexpatch]]` expanding the maximum window
+  size from 1300×1048 to 32000×32000. Guarded on the exact v1.02 exe size
+  (2,073,600 bytes) and marked `optional`, so it's skipped rather than fatal on
+  any other build.
+- **CD audio** — yes.
+
+### Sid Meier's Colonization
+
+- **Win16**, under otvdm.
+- The Windows game already lives unpacked in the disc's `INSTALL/` directory,
+  so no installer run is needed — except `colonize.exe`, which ships
+  ARCV-compressed as `COLONIZE.$00`. The install engine expands ARCV archives
+  automatically.
+- **CD audio** — yes.
+
+### Sid Meier's Alpha Centauri
+
+> **Least tested of the six, and it still has visual glitches.** It renders and
+> plays, but expect rough edges — this one has had the least time on it.
+
+- **SafeDisc.** The retail disc can't be used at all: `terran.exe`/`terranx.exe`
+  are loader stubs, the real game is in encrypted `.icd` files, and `secdrv.sys`
+  won't load under Wine. So the profile repackages an existing **DRM-free
+  install folder** (e.g. a GOG directory) instead of a disc image.
+- **Rendering — the hard part.** Modern winemac/Metal Wine cannot present SMAC's
+  old fullscreen DirectDraw mode-switch; it white-screens. (This is why GOG
+  shipped SMAC in an ancient X11 Wineskin.) The fix is the bundled
+  [cnc-ddraw] wrapper, loaded via `dll_overrides = "ddraw=n,b"`, which
+  re-implements DirectDraw. **Only its GDI renderer works here** — the OpenGL
+  and Direct3D 9 renderers white- or black-screen on winemac. Windowed only.
+- **Virtual desktop pinned to 1024×768.** SMAC's DirectDraw primary surface has
+  to match the desktop size or the surface is lost and the screen goes white;
+  1024×768 is the largest standard mode SMAC sizes its surface to.
+- **No CD audio** — the disc has none (single data track).
+- `terranx.exe` launches Alien Crossfire; switch `exe` to `terran.exe` for
+  vanilla SMAC.
+
+### Civilization III — Complete
+
+Built from a DRM-free (e.g. GOG) install. Four separate problems had to be
+solved:
+
+- **Init crash at `0x5cdbe6`.** Conquests' folder is not self-contained: its
+  path resolver searches its own directory, then two `Install_Path` values in
+  the registry. Files like `Text\version.txt` exist only in the base-game tree,
+  and the *first* missing-file popup fires before `labels.txt` is loaded — so
+  the popup code dereferences a NULL string array and faults. The fix is to ship
+  the **whole** GOG `app/` tree (base + PTW + Conquests), run the exe from the
+  `Conquests\` subdirectory, and seed both `Install_Path` registry values, like
+  a real Windows install.
+- **No virtual desktop** (`desktop = "none"`) plus `KeepRes=1`, so the game runs
+  borderless at the current resolution with no display-mode change. This stops
+  the launch-time resolution-switch self-exit. `PlayIntro=0` skips the intro
+  Bink movie, which otherwise blocks the main menu.
+- **Audio live-lock — the long one.** With music on, all sound (music *and*
+  SFX) died a few minutes into a game leaving the last buffer looping, the game
+  stayed playable, and quitting then hung forever at ~100% CPU. Root cause: all
+  Civ3 audio is serviced from a single winmm multimedia-timer callback in
+  `sound.dll` that takes a global audio lock. Inside its mixer, if a source
+  stream runs dry while output is still wanted, the "no data available" branch
+  jumps back to the loop test with nothing changed — an infinite loop, holding
+  the lock. That kills music and SFX together, lets `wine_dsound_mixer` replay
+  its last buffer forever, leaves the main thread untouched (so play continues),
+  and wedges shutdown, which takes the same lock before `timeKillEvent`. It's
+  self-reinforcing too: the "refill me" notification is posted *after* the walk,
+  so the feeder thread is never woken and the source never refills. A one-byte
+  `[[hexpatch]]` retargets that branch to the routine's own normal exit, so an
+  underrun returns short instead of spinning. Music and SFX now run for a full
+  session and the game exits cleanly. (Details and the disassembly are in
+  `resources/profiles/civ3.toml`.)
+- **Keyboard remap** works. It had previously been banned from this profile
+  because the hook appeared to trigger the audio hang — that turned out to be a
+  misdiagnosis of the bug above, and the keymap is back.
+
+No CD audio to wire up: the GOG release converted the disc soundtrack to
+in-game MP3s.
 
 ---
 
@@ -113,8 +248,8 @@ original disc (track 1 is the data track, so music starts at `track02`). The DLL
 also accepts `.wav/.mp3/.ogg/.opus`.
 
 Result: the original soundtrack plays in-game, straight from the app, with no CD
-in the drive. Four of the five built-in games use it (Alpha Centauri's disc has
-no CD audio).
+in the drive. Four of the six built-in games use it — Alpha Centauri's disc has
+no CD audio, and the GOG Civ3 release ships the soundtrack as in-game MP3s.
 
 ---
 
