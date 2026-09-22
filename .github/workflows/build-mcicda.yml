@@ -26,20 +26,15 @@ jobs:
         cmake-version: '3.28.x'
 
     - name: Configure CMake (32-bit)
-      run: |
-        mkdir build
-        cd build
-        cmake ../mcicda -G "Visual Studio 17 2022" -A Win32
+      run: cmake -S mcicda -B build-mcicda -G "Visual Studio 17 2022" -A Win32
 
     - name: Build
-      run: |
-        cd build
-        cmake --build . --config Release
+      run: cmake --build build-mcicda --config Release
 
     - name: Collect artifacts
       run: |
         mkdir artifacts
-        copy build\Release\mcicda.dll artifacts\
+        copy build-mcicda\Release\mcicda.dll artifacts\
       shell: cmd
 
     - name: Upload artifacts
