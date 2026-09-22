@@ -14,17 +14,16 @@ Colonization). Includes Wine 16-bit DLLs.
 - License: GNU Lesser General Public License, version 2.1 (LGPL-2.1), with the
   underlying Wine components also under LGPL-2.1.
 
-### libogg — `mcicda/deps/ogg/`
-Ogg container library, statically linked into `mcicda.dll` (CD-audio
-replacement). See `mcicda/deps/ogg/COPYING`.
-- Project: https://gitlab.xiph.org/xiph/ogg  (Xiph.Org Foundation)
-- License: BSD 3-Clause.
-
-### libopus — `mcicda/deps/opus/`
-Opus audio codec, statically linked into `mcicda.dll`. See
-`mcicda/deps/opus/COPYING`.
-- Project: https://gitlab.xiph.org/xiph/opus  (Xiph.Org Foundation and others)
-- License: BSD 3-Clause.
+### libogg, libopus, opusfile — statically linked into `mcicda.dll`
+The CD-audio replacement DLL (`resources/mcicda.dll`, a prebuilt binary from
+https://github.com/jowtron/mcicda-stub) statically links these Xiph.Org
+libraries. Their license texts are in `mcicda/licenses/`.
+- libogg: https://gitlab.xiph.org/xiph/ogg (BSD 3-Clause,
+  `mcicda/licenses/libogg-COPYING`)
+- libopus: https://gitlab.xiph.org/xiph/opus (BSD 3-Clause,
+  `mcicda/licenses/libopus-COPYING`)
+- opusfile: https://gitlab.xiph.org/xiph/opusfile (BSD 3-Clause,
+  `mcicda/licenses/opusfile-COPYING`)
 
 ## Downloaded / bundled at build time (not in this repository)
 

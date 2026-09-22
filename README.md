@@ -235,7 +235,8 @@ tracks on the disc, not files the game reads. On original hardware the game asks
 the OS to play "track 3" and the CD drive does it. That doesn't work from a disc
 *image* on macOS, so the music normally just… doesn't play.
 
-This project fixes it with a small **drop-in `mcicda.dll`** (built from source in
+This project fixes it with a small **drop-in `mcicda.dll`** (from
+[jowtron/mcicda-stub](https://github.com/jowtron/mcicda-stub), prebuilt copies in
 [`mcicda/`](mcicda), links libogg + libopus). At build time the pipeline:
 
 1. Splits your `.cue`/`.bin` into the data track + the audio tracks (pure Go).
