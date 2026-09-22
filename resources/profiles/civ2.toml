@@ -9,6 +9,13 @@ win16 = false
 game_dir = "Civ2"
 theme = "auto"  # follow the macOS light/dark appearance for menus/dialogs/chrome
 install = "extract-installshield"
+
+# NO Wine virtual desktop. This game was built and verified without one (before
+# d56bdb0 made a 1920x1080 desktop the default); inside it, the game lays its
+# windows out against the oversized virtual screen, so the menu and dialogs land
+# off to the right of the visible window.
+desktop = "none"
+
 # CD-check markers only. The label must match the real disc (the game scans
 # CD-ROM drives for it) and a few small root files stand in as the disc.
 # The KINGS/VIDEO movie dirs are intentionally NOT retained: they are Intel

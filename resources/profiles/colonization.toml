@@ -8,6 +8,12 @@ exe = "COLONIZE.EXE"
 win16 = true
 game_dir = "COLONIZE"
 install = "copy-dir:INSTALL"
+
+# NO Wine virtual desktop. This game was built and verified without one (before
+# d56bdb0 made a 1920x1080 desktop the default). Civ2 MGE, verified the same
+# way, lays its menu and dialogs off-screen inside that desktop; this game was
+# never tested in one, so keep its known-good setup.
+desktop = "none"
 theme = "auto"  # follow the macOS light/dark appearance for menus/dialogs/chrome
 
 # Remap 789/uo/jkl to the numpad for unit movement (same layout as CivNet).
